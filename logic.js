@@ -132,7 +132,8 @@
   }
 
   /* ---------- 分數燃料站（四上 6、四下 3） ---------- */
-  function genFra(lv) {
+  function genFra(lv) { const q = genFra0(lv); q.food = ri(0, 3); return q; } // 每題換一樣真實的東西
+  function genFra0(lv) {
     const n = pick([3, 4, 5, 6, 8]);
     if (lv <= 0) {
       const t = pick(['真分數', '假分數', '帶分數']);

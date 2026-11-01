@@ -408,7 +408,7 @@ function gate(q, label, n, onStep, ask, drag) { // 動手 n 次才能作答；�
     if (t === k) return;
     k = t; sfx.hop(); onStep(k); if (k === n) end(); else paint();
   }, drag.sel);
-  else st.onclick = e => { if (!over && e.target.closest('svg, .pies, .crates, .kms, .packs, .hrow, .stadiums, .pv, .zero-eq, .fcells') && !e.target.closest('button')) document.getElementById('gt').click(); };
+  else st.onclick = e => { if (!over && e.target.closest('svg, .pies, .crates, .kms, .packs, .hrow, .stadiums, .pv, .zero-eq, .fcells, .foods') && !e.target.closest('button') && document.getElementById('gt')) document.getElementById('gt').click(); };
 }
 const setEl = (id, html) => { document.getElementById(id).innerHTML = html; };
 function unitPick(q) {
@@ -753,92 +753,124 @@ function viewTri(q) {
 const fracHtml = (a, n) => `<span class="frac num"><i>${a}</i><i>${n}</i></span>`;
 const mixHtml = (w, a, n) => `<span class="mixed num">${w ? `<b>${w}</b>` : ''}${a || !w ? fracHtml(a, n) : ''}</span>`;
 const SLICE = { a: '#d6476b', b: '#f0a03c', g: '#ffffff', '': '#fff0cf' };
-function pieSvg(n, states, from) {
+function pieSvg(n, states, from) { // 每塊都可以點
   const P = i => { const t = i / n * 2 * Math.PI - Math.PI / 2; return `${60 + 54 * Math.cos(t)} ${60 + 54 * Math.sin(t)}`; };
   let s = '<svg class="pie" viewBox="0 0 120 120"><circle cx="60" cy="60" r="57" fill="#c98f4a"/>';
-  for (let i = 0; i < n; i++) { const st = states[i] || ''; s += n === 1 ? `<circle cx="60" cy="60" r="54" fill="${SLICE[st]}"/>` : `<path d="M60 60L${P(i)}A54 54 0 0 1 ${P(i + 1)}Z" fill="${SLICE[st]}" stroke="#a9702a" stroke-width="2"/>`; }
+  for (let i = 0; i < n; i++) { const st = states[i] || '', idx = (from || 0) + i; s += n === 1 ? `<circle data-s="${idx}" cx="60" cy="60" r="54" fill="${SLICE[st]}"/>` : `<path data-s="${idx}" d="M60 60L${P(i)}A54 54 0 0 1 ${P(i + 1)}Z" fill="${SLICE[st]}" stroke="#a9702a" stroke-width="2"/>`; }
   return s + '</svg>';
 }
-function piesOf(total, n, min) { // total 塊，每個派 n 塊
+function piesOf(total, n, min) { // 其他題目用的整排派
   const cnt = Math.max(min || 1, Math.ceil(total / n)); let out = '';
   for (let k = 0; k < cnt; k++) out += pieSvg(n, Array.from({ length: n }, (_, i) => k * n + i < total ? 'a' : ''));
   return `<div class="pies">${out}</div>`;
 }
-const loose = (cnt) => `<div class="loose">${'<i></i>'.repeat(cnt)}</div>`;
+/* 真實的東西：派、巧克力、果汁、緞帶。一個東西平分成 n 份，每一份都點得到 */
+const FOOD = [
+  { k: 'pie', one: '個派', cut: '切成', u: '塊', e: '🍰' },
+  { k: 'choc', one: '片巧克力', cut: '分成', u: '格', e: '🍫' },
+  { k: 'juice', one: '瓶果汁', cut: '倒成', u: '杯', e: '🥤' },
+  { k: 'rib', one: '條緞帶', cut: '剪成', u: '段', e: '🎀' },
+];
+function food1(f, n, st, from) {
+  if (f.k === 'pie') return pieSvg(n, st, from);
+  return `<div class="food ${f.k}" style="--n:${n}">${Array.from({ length: n }, (_, i) => `<i data-s="${from + i}" class="${st[i] || ''}"></i>`).join('')}</div>`;
+}
+function foods(f, n, states) { // states 的長度是 n 的倍數
+  let out = '';
+  for (let k = 0; k < states.length / n; k++) out += `<span class="whole">${food1(f, n, states.slice(k * n, k * n + n), k * n)}</span>`;
+  return `<div class="foods">${out}</div>`;
+}
+const emptyStates = (total, n) => new Array(Math.max(1, Math.ceil(total / n)) * n).fill('');
+const loose = (f, cnt) => `<div class="loose">${`<span>${f.e}</span>`.repeat(cnt)}</div>`;
+const meanBox = (f, a, n) => `<div class="mean">${fracHtml(a, n)}<span><b>下面 ${n}</b>：1 ${f.one}${f.cut} ${n} ${f.u}<br><b>上面 ${a}</b>：有 ${a} ${f.u}</span></div>`;
+const wholeText = (f, c, n) => { const w = Math.floor(c / n), r = c % n; return w ? `${w} ${f.one}${r ? `又 ${r} ${f.u}` : ''}` : `${r} ${f.u}`; };
 function viewFra(q) {
+  const f = FOOD[q.food || 0], gr = () => R.tries === 0 ? 2 : R.tries === 1 ? 1 : 0;
   if (q.mode === 'kind') {
-    const total = q.w * q.n + q.a;
-    frame(`${mixHtml(q.w, q.a, q.n)} 是哪一種分數？`, `${piesOf(total, q.n)}<div class="trail" id="ct"></div>`);
-    const opts = ['真分數', '假分數', '帶分數'];
-    return gate(q, '數一數有幾塊', 1, () => setEl('ct', `紅色 ${total} 塊，1 個派是 ${q.n} 塊，${total < q.n ? '比 1 小' : total === q.n ? '等於 1' : '比 1 大'}`), () => pickOne(opts, opts.indexOf(q.ans), '分子比分母小是真分數；分子大於或等於分母是假分數；整數和真分數合起來是帶分數。', `對了！是${q.ans}。`, 'kind'));
+    const total = q.w * q.n + q.a, opts = ['真分數', '假分數', '帶分數'];
+    frame(`${mixHtml(q.w, q.a, q.n)} ${f.one}，<br>${isFast(q) ? '這是哪一種分數？' : `點一點，一${f.u}一${f.u}放上去。`}`, `${q.w ? '' : meanBox(f, q.a, q.n)}<div id="pp"></div><div class="trail" id="ct"></div>`);
+    let k = isFast(q) ? total : 0, over = false;
+    const draw = () => { const st = emptyStates(total, q.n).map((_, i) => i < k ? 'a' : ''); setEl('pp', foods(f, q.n, st)); setEl('ct', k ? `現在 ${wholeText(f, k, q.n)}` : `1 ${f.one}${f.cut} ${q.n} ${f.u}`); };
+    const ask = () => { over = true; setEl('ct', total < q.n ? `不到 1 ${f.one}` : total === q.n ? `剛好 1 ${f.one}` : `超過 1 ${f.one}，有 ${wholeText(f, total, q.n)}`); pickOne(opts, opts.indexOf(q.ans), '不到 1 個是真分數；剛好或超過 1 個、寫成幾分之幾的是假分數；寫成幾個又幾分之幾的是帶分數。', `對了！是${q.ans}。`, 'kind'); };
+    draw();
+    if (isFast(q)) return ask();
+    const put = () => { if (over) return; k++; sfx.hop(); draw(); if (k === q.n && total > q.n) setMsg(`滿 1 ${f.one}了，繼續放！`, 'good'); if (k === total) ask(); };
+    document.getElementById('pp').onclick = e => { if (e.target.closest('[data-s]')) put(); };
+    actionBtn('gt', `放 1 ${f.u}`).onclick = put;
+    return;
   }
   if (q.mode === 'pack') {
-    frame(`${fracHtml(q.a, q.n)} 個派，有 ${q.a} 塊。<br>${q.n} 塊裝滿一盒，幫它裝盒。`, `<div id="box" class="pies"></div><div id="lz"></div>${padHidden()}`);
-    let left = q.a, box = 0;
-    const draw = () => { document.getElementById('box').innerHTML = pieSvg(q.n, new Array(q.n).fill('a')).repeat(box); document.getElementById('lz').innerHTML = left ? loose(left) + `<div class="trail">還有 ${left} 塊</div>` : ''; };
+    frame(`${fracHtml(q.a, q.n)} ${f.one}，就是 ${q.a} ${f.u}。<br>每 ${q.n} ${f.u}湊成 1 ${f.one}，湊湊看。`, `${meanBox(f, q.a, q.n)}<div id="box"></div><div id="lz"></div><div class="trail" id="ct"></div>${padHidden()}`);
+    let put = isFast(q) ? q.a : 0;
+    const draw = () => { setEl('box', foods(f, q.n, emptyStates(Math.max(q.a, 1), q.n).map((_, i) => i < put ? 'a' : ''))); setEl('lz', q.a - put ? loose(f, q.a - put) : ''); setEl('ct', `湊好 ${Math.floor(put / q.n)} ${f.one}，還有 ${q.a - put} ${f.u}沒放`); };
     draw();
-    const ask = () => stepKeypad(q.r ? ['裝滿幾盒？', '還剩幾塊？'] : ['裝滿幾盒？'], q.r ? [q.w, q.r] : [q.w], `每 ${q.n} 塊是一盒。`, q.r ? `對了！${q.a}/${q.n} 就是 ${q.w} 又 ${q.r}/${q.n}。` : `對了！${q.a}/${q.n} 就是 ${q.w} 個派。`, 'pack');
-    if (isFast(q)) { document.getElementById('lz').innerHTML = `<div class="trail">每 ${q.n} 塊是 1 個派</div>`; return afterAct(ask); }
-    tapAlso('lz', 'pk');
-    actionBtn('pk', `裝一盒（拿 ${q.n} 塊）`).onclick = () => {
-      if (left < q.n) return;
-      left -= q.n; box++; sfx.hop(); draw();
-      if (left < q.n) { setMsg(left ? '剩下的不夠一盒了。' : '剛好裝完！', 'good'); afterAct(ask); }
-    };
+    const ask = () => stepKeypad(q.r ? [`湊滿幾${f.one}？`, `還多幾${f.u}？`] : [`湊滿幾${f.one}？`], q.r ? [q.w, q.r] : [q.w], `每 ${q.n} ${f.u}是 1 ${f.one}。`, q.r ? `對了！${q.a}/${q.n} 就是 ${q.w} 又 ${q.r}/${q.n}：${q.w} ${f.one}又 ${q.r} ${f.u}。` : `對了！${q.a}/${q.n} 就是 ${q.w} ${f.one}。`, 'pack');
+    if (isFast(q)) return afterAct(ask);
+    const go = d => { put = Math.min(q.a, put + d); sfx.hop(); draw(); if (put === q.a) { setMsg('都放好了！', 'good'); afterAct(ask); return; } paint(); };
+    const paint = () => { document.getElementById('actions').innerHTML = `<button class="btn" id="gt">放 1 ${f.u}</button><button class="btn alt" id="more">放滿這一${f.one.slice(0, 1)}</button>`; document.getElementById('gt').onclick = () => go(1); document.getElementById('more').onclick = () => go(q.n - put % q.n); };
+    document.getElementById('lz').onclick = () => go(1);
+    paint();
     return;
   }
   if (q.mode === 'unpack') {
-    frame(`${mixHtml(q.w, q.r, q.n)} 個派，<br>全部切開，一共幾塊？`, `<div id="box" class="pies"></div><div id="lz"></div>${padHidden()}`);
-    let box = q.w, cnt = q.r;
-    const draw = () => { document.getElementById('box').innerHTML = pieSvg(q.n, new Array(q.n).fill('a')).repeat(box); document.getElementById('lz').innerHTML = loose(cnt) + `<div class="trail">每盒可切成 ${q.n} 塊</div>`; };
+    frame(`${mixHtml(q.w, q.r, q.n)} ${f.one}：<br>${q.w} ${f.one}又 ${q.r} ${f.u}。全部拆開，共幾${f.u}？`, `<div id="box"></div><div id="lz"></div><div class="trail" id="ct"></div>${padHidden()}`);
+    let box = isFast(q) ? 0 : q.w;
+    const draw = () => { const cnt = (q.w - box) * q.n + q.r; setEl('box', box ? foods(f, q.n, new Array(box * q.n).fill('a')) : ''); setEl('lz', loose(f, cnt)); setEl('ct', box ? `點整${f.one.slice(0, 1)}的東西，拆成 ${q.n} ${f.u}` : '全部拆開了，數一數'); };
     draw();
-    const ask = () => stepKeypad([`共幾塊？（答案是 □/${q.n}）`], [q.ans], `${q.w}×${q.n}＋${q.r}。`, `對了！${q.w} 又 ${q.r}/${q.n} 就是 ${q.ans}/${q.n}。`, 'unpack');
+    const ask = () => stepKeypad([`共幾${f.u}？（答案是 □/${q.n}）`], [q.ans], `${q.w} ${f.one}是 ${q.w}×${q.n} ${f.u}，再加 ${q.r} ${f.u}。`, `對了！${q.w} 又 ${q.r}/${q.n} 就是 ${q.ans}/${q.n}。`, 'unpack');
     if (isFast(q)) return afterAct(ask);
-    tapAlso('box', 'cut');
-    actionBtn('cut', '切開一盒').onclick = () => {
-      box--; cnt += q.n; sfx.hop(); draw();
-      document.getElementById('lz').querySelector('.trail').innerHTML = `數一數`;
-      if (!box) afterAct(ask);
-    };
+    const open = () => { if (!box) return; box--; sfx.hop(); draw(); if (!box) { afterAct(ask); return; } };
+    document.getElementById('box').onclick = open;
+    actionBtn('gt', `拆開 1 ${f.one}`).onclick = open;
     return;
   }
   if (q.mode === 'line') {
     const cells = q.top * q.n, x = i => 20 + i / cells * 300;
-    const svg = cur => { let s = `<svg class="fline" viewBox="0 0 340 70"><line x1="20" y1="40" x2="320" y2="40" stroke="#33405a" stroke-width="3"/>`; for (let i = 0; i <= cells; i++) { const m = i % q.n === 0; s += `<line x1="${x(i)}" y1="${m ? 28 : 33}" x2="${x(i)}" y2="${m ? 52 : 47}" stroke="#33405a" stroke-width="${m ? 3 : 1.5}"/>`; if (m) s += `<text x="${x(i)}" y="67" text-anchor="middle" class="pt">${i / q.n}</text>`; } return s + `<path d="M${x(cur)} 28l-7 -14h14z" fill="#d6476b"/></svg>`; };
-    frame(`把旗子插到 ${fracHtml(q.a, q.n)} 的位置。<br>0 到 1 之間切成 ${q.n} 格。`, `<div id="ln"></div><div class="odo two"><button class="turn" id="bk">← 退 1 格</button><button class="turn" id="fw">進 1 格 →</button></div>`);
+    const svg = cur => { let s = `<svg class="fline" viewBox="0 0 340 92">`; for (let i = 0; i < cells; i++) s += `<rect x="${x(i)}" y="6" width="${300 / cells}" height="24" fill="${i < cur ? '#d6476b' : '#fff0cf'}" stroke="#a9702a" stroke-width="${(i + 1) % q.n ? 1 : 3}"/>`; s += `<line x1="20" y1="58" x2="320" y2="58" stroke="#33405a" stroke-width="3"/>`; for (let i = 0; i <= cells; i++) { const m = i % q.n === 0; s += `<line x1="${x(i)}" y1="${m ? 46 : 51}" x2="${x(i)}" y2="${m ? 70 : 65}" stroke="#33405a" stroke-width="${m ? 3 : 1.5}"/>`; if (m) s += `<text x="${x(i)}" y="87" text-anchor="middle" class="pt">${i / q.n}</text>`; } return s + `<path d="M${x(cur)} 46l-7 -12h14z" fill="#2f5f9e"/></svg>`; };
+    frame(`拉一條 ${fracHtml(q.a, q.n)} ${f.one}那麼長。<br>每 1 ${f.one}${f.cut} ${q.n} ${f.u}。`, `${meanBox(f, q.a, q.n)}<div id="ln"></div><div class="trail" id="ct"></div><div class="odo two"><button class="turn" id="bk">← 退 1 ${f.u}</button><button class="turn" id="fw">進 1 ${f.u} →</button></div>`);
     let cur = 0;
-    const draw = () => { document.getElementById('ln').innerHTML = svg(cur); };
+    const draw = () => { setEl('ln', svg(cur)); setEl('ct', cur ? `${cur} ${f.u}，就是 ${cur}/${q.n}${cur >= q.n ? `，也就是 ${wholeText(f, cur, q.n)}` : ''}` : '拖藍色的箭頭，也可以按按鈕'); };
     draw();
-    dragOn(document.getElementById('ln'), x => { const t = Math.max(0, Math.min(cells, Math.round((x * 340 - 20) / 300 * cells))); if (t !== cur) { cur = t; sfx.hop(); draw(); } });
-    setMsg('拖動旗子，也可以按按鈕。');
+    dragOn(document.getElementById('ln'), xr => { const t = Math.max(0, Math.min(cells, Math.round((xr * 340 - 20) / 300 * cells))); if (t !== cur) { cur = t; sfx.hop(); draw(); } });
     document.getElementById('bk').onclick = () => { cur = Math.max(0, cur - 1); sfx.hop(); draw(); };
     document.getElementById('fw').onclick = () => { cur = Math.min(cells, cur + 1); sfx.hop(); draw(); };
-    actionBtn('ok', '插這裡').onclick = () => {
-      if (cur === q.a) return finish(graded(), 'line', `對了！${q.a}/${q.n} 就是 ${q.a} 個 1/${q.n}，從 0 走 ${q.a} 格。`);
+    actionBtn('ok', '就到這裡').onclick = () => {
+      if (cur === q.a) return finish(gr(), 'line', `對了！${q.a}/${q.n} 就是 ${q.a} ${f.u}，從 0 走 ${q.a} 格。`);
       if (miss()) { cur = q.a; draw(); return finish(0, { wrong: cur, ans: q.a }, `${q.a}/${q.n} 在這裡，從 0 走 ${q.a} 格。`); }
-      setMsg(`分子是幾，就從 0 走幾格。你走了 ${cur} 格。`, 'hint');
+      setMsg(`上面的 ${q.a} 是 ${q.a} ${f.u}。你拉了 ${cur} ${f.u}。`, 'hint');
     };
     return;
   }
-  if (q.mode === 'calc' || q.mode === 'times') {
-    const times = q.mode === 'times', start = times ? 0 : q.w * q.n + q.a, delta = times ? q.a * q.k : q.b, need = times ? q.k : q.b, unit = times ? q.a : 1;
-    const head = times ? `${fracHtml(q.a, q.n)} × ${q.k}` : `${mixHtml(q.w, q.a, q.n)} ${q.sub ? '－' : '＋'} ${fracHtml(q.b, q.n)}`;
-    frame(`${head}<br>${times ? `放 ${q.k} 次，每次 ${q.a} 塊。` : q.sub ? `吃掉 ${q.b} 塊。` : `再放 ${q.b} 塊。`}`, `<div id="pp"></div><div class="trail" id="now"></div>${padHidden()}`);
-    let cur = start, done = 0;
-    const draw = () => { document.getElementById('pp').innerHTML = piesOf(cur, q.n); document.getElementById('now').innerHTML = `現在 ${cur} 塊`; };
+  if (q.mode === 'calc') {
+    const start = q.w * q.n + q.a, cap = Math.max(start, start + (q.sub ? 0 : q.b)), st = emptyStates(cap, q.n).map((_, i) => i < start ? 'a' : '');
+    frame(`${mixHtml(q.w, q.a, q.n)} ${q.sub ? '－' : '＋'} ${fracHtml(q.b, q.n)}<br>${isFast(q) ? `現在有幾${f.u}？` : q.sub ? `有 ${start} ${f.u}，點掉 ${q.b} ${f.u}。` : `有 ${start} ${f.u}，點空格再放 ${q.b} ${f.u}。`}`, `<div id="pp"></div><div class="trail" id="ct"></div>${padHidden()}`);
+    let done = 0;
+    const cnt = () => st.filter(x => x === 'a' || x === 'b').length;
+    const draw = () => { setEl('pp', foods(f, q.n, st)); setEl('ct', `現在 ${cnt()} ${f.u}，還要${q.sub ? '拿走' : '放'} ${q.b - done} ${f.u}`); };
+    const ask = () => { setEl('ct', ''); stepKeypad([`共幾${f.u}？（答案是 □/${q.n}）`], [q.ans], `分母不變，${q.sub ? `${start}－${q.b}` : `${start}＋${q.b}`}。`, `對了！答案是 ${q.ans}/${q.n}${q.ans >= q.n ? `，也就是 ${Math.floor(q.ans / q.n)}${q.ans % q.n ? ` 又 ${q.ans % q.n}/${q.n}` : ''}` : ''}。分母還是 ${q.n}，因為每${f.u}一樣大。`, 'calc'); };
+    const act = i => { if (done >= q.b) return; if (i === undefined) i = q.sub ? st.lastIndexOf('a') : st.indexOf(''); if (q.sub ? st[i] !== 'a' : st[i] !== '') return; st[i] = q.sub ? 'g' : 'b'; done++; sfx.hop(); draw(); if (done === q.b) { setMsg('做完了，數數看。', 'good'); afterAct(ask); } };
+    if (isFast(q)) { for (let i = 0; i < q.b; i++) { const t = q.sub ? st.lastIndexOf('a') : st.indexOf(''); st[t] = q.sub ? 'g' : 'b'; } draw(); return afterAct(ask); }
     draw();
-    const ask = () => { document.getElementById('now').innerHTML = ''; stepKeypad([`共幾塊？（答案是 □/${q.n}）`], [q.ans], times ? `${q.a}×${q.k}。分母不變。` : `分母不變，${q.sub ? `${start}－${q.b}` : `${start}＋${q.b}`}。`, `對了！答案是 ${q.ans}/${q.n}${q.ans >= q.n ? `，也就是 ${Math.floor(q.ans / q.n)}${q.ans % q.n ? ` 又 ${q.ans % q.n}/${q.n}` : ''}` : ''}。`, q.mode); };
-    if (isFast(q)) return afterAct(ask);
-    tapAlso('pp', 'st');
-    actionBtn('st', times ? '放一次' : q.sub ? '吃一塊' : '放一塊').onclick = () => {
-      cur += q.sub ? -1 : unit; done++; sfx.hop(); draw();
-      if (done === need) { setMsg('做完了，數數看。', 'good'); afterAct(ask); }
-    };
+    document.getElementById('pp').onclick = e => { const c = e.target.closest('[data-s]'); if (c) act(+c.dataset.s); };
+    actionBtn('gt', q.sub ? `拿走 1 ${f.u}` : `放 1 ${f.u}`).onclick = () => act();
     return;
   }
-  const left = q.w * q.n + q.r;
-  frame(`${mixHtml(q.w, q.r, q.n)}　和　${fracHtml(q.a, q.n)}<br>哪一邊比較大？`, `<div class="two-col"><div>${piesOf(left, q.n)}<div class="trail" id="c1"></div></div><div>${piesOf(q.a, q.n)}<div class="trail" id="c2"></div></div></div>`);
-  gate(q, ['數左邊幾塊', '數右邊幾塊'], 2, k => { if (k === 1) setEl('c1', `${left} 塊`); else setEl('c2', `${q.a} 塊`); }, () => lrChoices('', '', q.ans, `把帶分數換成假分數：${q.w} 又 ${q.r}/${q.n}＝${left}/${q.n}，再比分子。`, `對了！${q.w} 又 ${q.r}/${q.n} 就是 ${left}/${q.n}，和 ${q.a}/${q.n} 比一比。`, true));
+  if (q.mode === 'times') {
+    const st = emptyStates(q.ans, q.n);
+    frame(`${fracHtml(q.a, q.n)} × ${q.k}<br>每人拿 ${q.a} ${f.u}，${q.k} 個人。點一個人，他就拿走。`, `<div class="people-row" id="pl">${Array.from({ length: q.k }, (_, i) => `<button class="person-b" data-p="${i}">🙂<small>${q.a} ${f.u}</small></button>`).join('')}</div><div id="pp"></div><div class="trail" id="ct"></div>${padHidden()}`);
+    let cur = 0, n = 0; const seen = new Set();
+    const draw = () => { setEl('pp', foods(f, q.n, st.map((_, i) => i < cur ? 'a' : ''))); setEl('ct', `共 ${cur} ${f.u}`); };
+    const ask = () => stepKeypad([`共幾${f.u}？（答案是 □/${q.n}）`], [q.ans], `${q.a}×${q.k}。分母不變。`, `對了！答案是 ${q.ans}/${q.n}${q.ans >= q.n ? `，也就是 ${wholeText(f, q.ans, q.n)}` : ''}。`, 'times');
+    const give = i => { if (seen.has(i)) return; seen.add(i); document.querySelector(`[data-p="${i}"]`).disabled = true; cur += q.a; n++; sfx.hop(); draw(); if (n === q.k) { document.getElementById('actions').innerHTML = ''; setMsg('都拿到了，數數看。', 'good'); afterAct(ask); } };
+    if (isFast(q)) { document.getElementById('pl').style.display = 'none'; cur = q.ans; draw(); return afterAct(ask); }
+    draw();
+    document.querySelectorAll('[data-p]').forEach(b => b.onclick = () => give(+b.dataset.p));
+    actionBtn('gt', '下一個人拿').onclick = () => give(n);
+    return;
+  }
+  const left = q.w * q.n + q.r, sts = c => emptyStates(c, q.n).map((_, i) => i < c ? 'a' : '');
+  frame(`左邊 ${mixHtml(q.w, q.r, q.n)}，右邊 ${fracHtml(q.a, q.n)}<br>每${f.u}一樣大，哪一邊比較多？`, `<div class="two-col"><div>${foods(f, q.n, sts(left))}<div class="trail" id="c1"></div></div><div>${foods(f, q.n, sts(q.a))}<div class="trail" id="c2"></div></div></div>`);
+  gate(q, ['數左邊', '數右邊'], 2, k => { if (k === 1) setEl('c1', `${left} ${f.u}`); else setEl('c2', `${q.a} ${f.u}`); }, () => lrChoices('', '', q.ans, `${q.w} 又 ${q.r}/${q.n} 就是 ${left} ${f.u}，再和 ${q.a} ${f.u}比。`, `對了！左邊 ${left} ${f.u}，右邊 ${q.a} ${f.u}。`, true));
 }
 
 /* ---------- 七：密碼規律室 ---------- */
@@ -1279,36 +1311,34 @@ function viewDeck(q) {
 function strip(n, a, cls) { return `<div class="fcells ${cls || ''}">${Array.from({ length: n }, (_, i) => `<i class="fcell ${i < a ? 'on' : ''}"></i>`).join('')}</div>`; }
 function viewEqv(q) {
   if (q.mode === 'cut') {
-    frame(`${fracHtml(q.a, q.n)} ＝ <span class="frac num"><i>？</i><i>${q.to}</i></span><br>把紙條切細，紅色變了嗎？`, `${strip(q.n, q.a)}<div id="s2">${strip(q.n, q.a, 'alt')}</div><div class="trail" id="c">一共 ${q.n} 格</div>${padHidden()}`);
+    frame(`兩片一樣大的巧克力，每片分成 ${q.n} 格。<br>上面吃了 ${q.a} 格，就是 ${fracHtml(q.a, q.n)} 片。把下面切細，吃的量變了嗎？`, `${strip(q.n, q.a, 'choc')}<div id="s2">${strip(q.n, q.a, 'choc alt')}</div><div class="trail" id="c">下面也是 ${q.n} 格</div>${padHidden()}`);
     let k = 1;
-    const ask = () => stepKeypad(['紅色有幾格？'], [q.ans], `分母乘以 ${q.k}，分子也要乘以 ${q.k}。`, `對了！${q.a}/${q.n}＝${q.ans}/${q.to}，紅色一樣多，只是切得比較細。`, 'cut');
-    if (isFast(q)) return afterAct(ask);
+    const ask = () => stepKeypad([`下面塗色的有幾格？（${q.a}/${q.n}＝□/${q.to}）`], [q.ans], `每格都切成 ${q.k} 小格，${q.a} 格就變成 ${q.a}×${q.k} 小格。`, `對了！${q.a}/${q.n}＝${q.ans}/${q.to}。吃的一樣多，只是格子變小、變多。`, 'cut');
+    if (isFast(q)) { setEl('s2', strip(q.to, q.ans, 'choc alt')); return afterAct(ask); }
     tapAlso('s2', 'k');
-    actionBtn('k', '每格再切細').onclick = () => {
-      k++; sfx.hop(); document.getElementById('s2').innerHTML = strip(q.n * k, q.a * k, 'alt'); document.getElementById('c').innerHTML = `一共 ${q.n * k} 格`;
+    actionBtn('k', '每格再切細一次').onclick = () => {
+      k++; sfx.hop(); setEl('s2', strip(q.n * k, q.a * k, 'choc alt')); setEl('c', `下面變成 ${q.n * k} 格，塗色的部分一樣長`);
       if (k === q.k) { setMsg(`切成 ${q.to} 格了！`, 'good'); afterAct(ask); }
     };
     return;
   }
   if (q.mode === 'simplify') {
-    frame(`${fracHtml(q.a, q.n)} 可以合併成更簡單的分數。<br>每 ${q.k} 格合成 1 大格。`, `${strip(q.n, q.a)}<div id="s2">${strip(q.n, q.a, 'alt')}</div>${padHidden()}`);
-    return gate(q, `把每 ${q.k} 格合起來`, 1, () => setEl('s2', strip(q.ansN, q.ansA, 'alt')), () => stepKeypad(['下面塗色有幾大格？', '全部有幾大格？'], [q.ansA, q.ansN], `分子分母都除以 ${q.k}。`, `對了！${q.a}/${q.n}＝${q.ansA}/${q.ansN}。`, 'simplify'));
+    frame(`巧克力分成 ${q.n} 小格，吃了 ${q.a} 小格，<br>就是 ${fracHtml(q.a, q.n)} 片。每 ${q.k} 小格合成 1 大格。`, `${strip(q.n, q.a, 'choc')}<div id="s2">${strip(q.n, q.a, 'choc alt')}</div>${padHidden()}`);
+    return gate(q, `把每 ${q.k} 小格合起來`, 1, () => setEl('s2', strip(q.ansN, q.ansA, 'choc alt')), () => stepKeypad(['吃掉的有幾大格？', '全部有幾大格？'], [q.ansA, q.ansN], `小格數都除以 ${q.k}。`, `對了！${q.a}/${q.n}＝${q.ansA}/${q.ansN}。`, 'simplify'));
   }
   if (q.mode === 'candy') {
     const groups = k => Array.from({ length: q.n }, (_, i) => `<span class="pack ${i < k ? 'on' : ''}">${'🍬'.repeat(q.per)}</span>`).join('');
-    frame(`${q.total} 顆糖平分成 ${q.n} 包，<br>${fracHtml(q.a, q.n)} 是幾顆？`, `<div class="packs" id="pk">${groups(0)}</div><div class="trail" id="ct">拿 ${q.a} 包，每包 ${q.per} 顆</div>${padHidden()}`);
-    return gate(q, '拿一包', q.a, k => { setEl('pk', groups(k)); setEl('ct', `拿了 ${k} 包`); }, () => stepKeypad(['幾顆？'], [q.ans], `${q.a}×${q.per}。`, `對了！${q.ans} 顆，也就是 ${q.ans}/${q.total} 盒，和 ${q.a}/${q.n} 一樣多。`, 'candy'));
+    frame(`${q.total} 顆糖平分成 ${q.n} 包，<br>${fracHtml(q.a, q.n)} 就是拿 ${q.a} 包，是幾顆？`, `<div class="packs" id="pk">${groups(0)}</div><div class="trail" id="ct">每包 ${q.per} 顆</div>${padHidden()}`);
+    return gate(q, '拿一包', q.a, k => { setEl('pk', groups(k)); setEl('ct', `拿了 ${k} 包，${k * q.per} 顆`); }, () => stepKeypad(['幾顆？'], [q.ans], `${q.a}×${q.per}。`, `對了！${q.ans} 顆，也就是 ${q.ans}/${q.total} 盒，和 ${q.a}/${q.n} 一樣多。`, 'candy'));
   }
   if (q.mode === 'cmp') {
-    frame(`${fracHtml(q.a, q.n)}　和　${fracHtml(q.c, q.m)}<br>切成一樣細再比。`, `${strip(q.n, q.a)}<div id="s2">${strip(q.m, q.c, 'alt')}</div><div class="trail" id="t"></div>`);
-    const ask = () => lrChoices('', '', q.ans, `${q.a}/${q.n} 切細後是 ${q.a * q.k}/${q.m}，再和 ${q.c}/${q.m} 比。`, `對了！${q.a}/${q.n}＝${q.a * q.k}/${q.m}，${q.a * q.k === q.c ? '兩邊一樣大' : `比 ${q.c}/${q.m} ${q.a * q.k > q.c ? '大' : '小'}`}。`, true);
-    if (isFast(q)) return ask();
-    actionBtn('k', '把上面切成一樣細').onclick = () => { sfx.hop(); document.querySelector('.fcells').outerHTML = strip(q.m, q.a * q.k); document.getElementById('t').innerHTML = `上面變成 ${q.a * q.k}/${q.m}`; ask(); };
-    return;
+    frame(`兩片一樣大的巧克力。<br>上面吃 ${fracHtml(q.a, q.n)} 片，下面吃 ${fracHtml(q.c, q.m)} 片，誰吃得多？`, `<div id="s1">${strip(q.n, q.a, 'choc')}</div><div id="s2">${strip(q.m, q.c, 'choc alt')}</div><div class="trail" id="t">上面的格子比較大，不好比</div>`);
+    const labels = { L: '上面多', R: '下面多', E: '一樣多' }, opts = ['L', 'E', 'R'], ask = () => pickOne(opts.map(o => labels[o]), opts.indexOf(q.ans), `${q.a}/${q.n} 切細後是 ${q.a * q.k}/${q.m}，再和 ${q.c}/${q.m} 比。`, `對了！${q.a}/${q.n}＝${q.a * q.k}/${q.m}，${q.a * q.k === q.c ? '兩邊一樣多' : `比 ${q.c}/${q.m} ${q.a * q.k > q.c ? '多' : '少'}`}。`, 'cmp');
+    return gate(q, '把上面切成一樣細', 1, () => { setEl('s1', strip(q.m, q.a * q.k, 'choc')); setEl('t', `上面變成 ${q.a * q.k}/${q.m}，格子一樣大了`); }, ask);
   }
-  const hasGrid = 100 % q.n === 0, cells = hasGrid ? q.a * (100 / q.n) : 0;
-  frame(`${fracHtml(q.a, q.n)} 換成小數是多少？`, `<div id="hb">${hundred(0)}</div><div class="trail" id="ct">平分成 ${q.n} 份，塗 ${q.a} 份</div>`);
-  gate(q, hasGrid ? `塗 ${q.a} 份` : '塗色', 1, () => { setEl('hb', hundred(cells)); setEl('ct', `塗了 ${cells} 格，也就是 ${cells} 個 0.01`); }, () => pickOne(q.options.map(numBtn), q.options.indexOf(q.ans), '先把分母變成 10 或 100，再寫成小數。', `對了！${q.a}/${q.n}＝${q.ans}。`, 'dec'));
+  const cells = q.a * (100 / q.n);
+  frame(`一大張巧克力有 100 小格，吃 ${fracHtml(q.a, q.n)} 張，<br>換成小數是多少？`, `<div id="hb">${hundred(0)}</div><div class="trail" id="ct">平分成 ${q.n} 份，塗 ${q.a} 份</div>`);
+  gate(q, `塗 ${q.a} 份`, 1, () => { setEl('hb', hundred(cells)); setEl('ct', `塗了 ${cells} 格，也就是 ${cells} 個 0.01`); }, () => pickOne(q.options.map(numBtn), q.options.indexOf(q.ans), '先把分母變成 10 或 100，再寫成小數。', `對了！${q.a}/${q.n}＝${q.ans}。`, 'dec'));
 }
 
 /* ---------- 十六：時刻調度室 ---------- */
