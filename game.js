@@ -1399,7 +1399,7 @@ function viewTime(q) {
 
 /* ---------- 十七：體積貨艙 ---------- */
 function isoSvg(a, b, c, shown, o) { // shown：畫幾塊（由下往上、由裡往外堆）
-  const dx = 20, dy = 11, h = 22, W = (a + b) * dx + 8, H = (a + b) * dy + c * h + 8, ox = b * dx + 4, oy = c * h + 4;
+  const dx = 20, dy = 11, h = 22, W = (a + b) * dx + 8, H = (a + b) * dy + c * h + 8, ox = b * dx + 4, oy = (c - 1) * h + 4;
   const order = []; for (let z = 0; z < c; z++) for (let y = 0; y < b; y++) for (let x = 0; x < a; x++) order.push([x, y, z]);
   const on = order.slice(0, shown === undefined ? order.length : shown).sort((p, q) => p[2] - q[2] || (p[0] + p[1]) - (q[0] + q[1]));
   const col = o && o.color || ['#6ea8dc', '#3f7cb8', '#2f5f9e'];
@@ -1446,7 +1446,7 @@ function viewVol(q) {
     frame('哪一堆和藍色的體積一樣大？', `<div class="vs">${isoSvg(q.a, q.b, q.c)}</div><div class="trail" id="ct"></div>`);
     return gate(q, '數藍色有幾塊', 1, () => setEl('ct', `藍色：每排 ${q.a} 塊、${q.b} 排、${q.c} 層，共 ${total} 塊`), () => pickOne(opts.map(o => isoSvg(o[0], o[1], o[2], undefined, { color: ['#f0b87a', '#d68f4a', '#b5722f'] })), right, '數數看每一堆有幾塊，形狀不同也可能一樣大。', `對了！都是 ${total} 塊，形狀不同，體積一樣大。`, 'same'));
   }
-  frame('這個貨櫃由兩堆組成，<br>共幾立方公分？', `<div class="vs"><span id="i1"></span><b class="plus">＋</b><span id="i2"></span></div>${padHidden()}`);
+  frame('這個貨櫃由兩堆組成，<br>共幾立方公分？', `<div class="vs iso-two"><div class="iso-c" id="i1"></div><b class="plus">＋</b><div class="iso-c" id="i2"></div></div>${padHidden()}`);
   gate(q, ['堆藍色', '堆橘色'], 2, k => { if (k === 1) setEl('i1', isoSvg(q.a, q.b, q.c)); else setEl('i2', isoSvg(q.d, q.f, q.e, undefined, { color: ['#f0b87a', '#d68f4a', '#b5722f'] })); }, () => stepKeypad(['藍色幾塊？', '橘色幾塊？', '全部幾塊？'], [q.a * q.b * q.c, q.d * q.f * q.e, q.ans], '每一堆都是長×寬×高。', `對了！${q.a * q.b * q.c}＋${q.d * q.f * q.e}＝${q.ans} 立方公分。`, 'two', null, { shortcut: true }));
 }
 const VIEWS = { big: viewBig, mul: viewMul, deg: viewDeg, divv: viewDivv, tri: viewTri, fra: viewFra, pat: viewPat, mix: viewMix, dec: viewDec, km: viewKm, quad: viewQuad, est: viewEst, chart: viewChart, deck: viewDeck, eqv: viewEqv, time: viewTime, vol: viewVol };

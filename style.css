@@ -718,3 +718,9 @@ button.hc4 { padding: 0; border: 0; border-radius: 0; min-height: 28px; }
 .fcells.choc i.fcell { background: #d9c1a2; border-right: 2px solid #4d2c14; }
 .fcells.choc i.fcell.on { background: #7a4a26; }
 .fcells.choc.alt i.fcell.on { background: #a8693a; }
+.iso { width: 100%; height: auto; }
+#iso .iso, .vs > .iso { width: 180px; }
+.choice .iso { width: 120px; }
+.iso-two { flex-wrap: nowrap; }
+.iso-c { flex: 1 1 0; min-width: 0; min-height: 90px; }
+.iso-c .iso { max-width: 140px; }
