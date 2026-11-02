@@ -725,6 +725,28 @@ button.hc4 { padding: 0; border: 0; border-radius: 0; min-height: 28px; }
 .iso-c { flex: 1 1 0; min-width: 0; min-height: 90px; }
 .iso-c .iso { max-width: 140px; }
 
+/* 新概念小故事 */
+.g4 { display: block; width: 100%; max-width: 340px; max-height: 230px; margin: 0 auto; animation: c4in .18s ease-out; }
+@keyframes c4in { from { opacity: .55; } }
+.c4t { fill: #33405a; font-size: 16px; font-family: inherit; }
+.c4tag { animation: c4pop 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes c4pop { 50% { transform: scale(1.1); } }
+.term { color: #c23a5e; background: #ffe680; padding: 0 3px; border-radius: 5px; white-space: nowrap; animation: termglow .8s ease-in-out 3; }
+@keyframes termglow { 50% { background: #ffc93c; } }
+@keyframes termpop { 40% { transform: scale(1.18); } }
+.tagrow { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.termtag { background: #33405a; color: #fff; border-radius: 16px; padding: 3px 12px; font-size: 16px; animation: termpop 1.1s ease-in-out infinite; }
+.cp { touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.cp2 { min-height: 70px; }
+.cslide { position: relative; height: 34px; margin: 8px 18px 2px; }
+.cslide::before { content: ''; position: absolute; left: 0; right: 0; top: 15px; height: 6px; border-radius: 3px; background: var(--line); }
+.cslide u { position: absolute; top: 11px; width: 4px; height: 14px; margin-left: -2px; background: #aab3c2; }
+.cslide i { position: absolute; top: 2px; width: 32px; height: 32px; margin-left: -16px; border-radius: 50%; background: #ffd65a; border: 3px solid #a9702a; font-style: normal; font-size: 15px; line-height: 26px; text-align: center; font-family: system-ui, sans-serif; color: transparent; text-shadow: none; }
+.cslide i.hint { color: #000; animation: c4nudge 1s ease-in-out infinite; }
+@keyframes c4nudge { 50% { transform: translateX(10px); } }
+.skip5 { display: block; margin: 6px auto 0; background: none; border: 0; color: var(--soft); text-decoration: underline; font: inherit; font-size: 14px; padding: 4px 12px; }
+.prompt small { font-size: 16px; color: var(--soft); }
+
 /* 單元數感測驗 */
 .quiz-entry { position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; width: 100%; background: rgba(255,253,247,.97); border-radius: 16px; border-bottom: 4px solid #d8c9a6; padding: 8px 14px; margin-bottom: 10px; min-height: 58px; }
 .quiz-entry b { font-size: 21px; flex: 1; text-align: left; }

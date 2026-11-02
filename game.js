@@ -134,7 +134,7 @@ function nextQ() {
   do { q = Logic.gen(R.game, R.fixedLv !== undefined ? R.fixedLv : rec(R.game).lv, S.unit); } while (R.lastKey === JSON.stringify(q) && guard++ < 8);
   R.lastKey = JSON.stringify(q);
   R.q = q; R.tries = 0;
-  VIEWS[R.game](q);
+  conceptThen(q, () => VIEWS[R.game](q));
 }
 // 一題結束：grade 2 第一次就很棒、1 第二次或差一點、0 沒答出來
 const reveal = sel => setTimeout(() => { const e = document.querySelector(sel); if (e) e.scrollIntoView({ block: 'nearest' }); }, 40); // 等注音排好才捲動，字變高才不會又把按鈕擠出去
@@ -171,13 +171,14 @@ function frame(promptHtml, stageHtml, extra) {
     <div class="top">
       <button class="icon-btn" id="home" aria-label="回地圖">⌂</button>
       <div class="dots">${dots}</div><span class="sem">${semOf(R.q)}</span>
-      <button class="icon-btn" id="say" aria-label="唸題目">🔊</button>
+      ${conceptsOf(R.game).length || LESSON_BEFORE[R.game] ? '<button class="icon-btn" id="cpt" aria-label="新概念小故事">💡</button>' : ''}<button class="icon-btn" id="say" aria-label="唸題目">🔊</button>
     </div>
     <div class="say-row">${artImg(R.boss ? 'mimi' : R.daily ? 'liang' : STORY[R.game].who, 'say-who')}<div class="prompt" id="prompt">${promptHtml}</div></div>
     <div class="stage" id="stage">${stageHtml}</div>
     <div class="msg" id="msg"></div>
     ${extra || ''}
     <div class="actions" id="actions"></div>`;
+  { const c4 = document.getElementById('cpt'); if (c4) c4.onclick = () => viewConcepts(R.game, () => VIEWS[R.game](R.q)); }
   document.getElementById('home').onclick = () => { R = null; go(''); };
   document.getElementById('say').onclick = () => speak(plainText(document.getElementById('prompt')));
 }
@@ -293,8 +294,9 @@ function viewPractice() {
     const ts = practiceTopics().filter(t => t[0] === k);
     return ts.length ? `<h3 class="pg-h">${GAMES[k].name}<span class="sem">${GAMES[k].sem}</span></h3><div class="pg">${ts.map(t => `<button class="pg-btn" data-g="${t[0]}" data-l="${t[1]}"><span class="sem">${t[3] >= 11 ? '四下' : '四上'}</span>${nums(t[2])}</button>`).join('')}</div>` : '';
   }).join('');
-  $app.innerHTML = `<div class="top"><button class="icon-btn" id="home" aria-label="回地圖">⌂</button><h2 class="page-h">練習場</h2></div><p class="tag">想多練哪一個？</p><h3 class="pg-h">單位的量感</h3><div class="pg">${Object.entries(LESSONS).map(([k, L]) => `<button class="pg-btn" data-ud="${k}"><span class="sem">${L.sem}</span>${L.title}</button>`).join("")}</div>${groups}`;
+  $app.innerHTML = `<div class="top"><button class="icon-btn" id="home" aria-label="回地圖">⌂</button><h2 class="page-h">練習場</h2></div><p class="tag">想多練哪一個？</p><button class="lesson-entry" id="cptAll"><span>💡</span><b>新概念小故事</b><small>可以重看</small></button><h3 class="pg-h">單位的量感</h3><div class="pg">${Object.entries(LESSONS).map(([k, L]) => `<button class="pg-btn" data-ud="${k}"><span class="sem">${L.sem}</span>${L.title}</button>`).join("")}</div>${groups}`;
   document.getElementById('home').onclick = () => go('');
+  document.getElementById('cptAll').onclick = () => viewConcepts(null, viewPractice);
   document.querySelectorAll('.pg-btn[data-g]').forEach(b => b.onclick = () => startRound(b.dataset.g, { lv: +b.dataset.l }));
   document.querySelectorAll('[data-ud]').forEach(b => b.onclick = () => runDrill(b.dataset.ud, viewPractice));
 }
@@ -1502,6 +1504,361 @@ function labPic(X, k) { // 單位要看得到它本來的樣子：角就是角�
   return dayBar(Math.min(k * X.each * 60, 1439), 0);
 }
 const LESSON_BEFORE = { km: ['km'], deg: ['deg'], deck: ['m2'], vol: ['cm3'], time: ['time'] };
+/* ---------- 新概念小故事：生活情境提問 → 動手試（不出現新詞）→ 命名、新詞貼回剛才的圖 → 換情境用新詞答一題，答錯回操作 ---------- */
+/* 單位教室（公里、度、平方公尺、立方公分、時間）已經教的單位不在這裡重複，💡 清單裡會接到單位教室 */
+const c4T = w => `<b class="term">${w}</b>`;
+const c4s = (h, inner) => `<svg class="g4" viewBox="0 0 320 ${h}">${inner}</svg>`;
+const c4x = (x, y, t, o = {}) => `<text x="${x}" y="${y}" text-anchor="${o.a || 'middle'}" class="c4t ${o.c || ''}"${o.s ? ` font-size="${o.s}"` : ''}${o.f ? ` style="fill:${o.f}"` : ''}>${t}</text>`;
+const c4tag = (x, y, t) => { const w = [...t].reduce((n, ch) => n + (/[\x00-\x7f]/.test(ch) ? 9 : 16), 14); return `<g class="c4tag"><rect x="${x - w / 2}" y="${y - 15}" width="${w}" height="24" rx="8" fill="#ffe680" stroke="#c23a5e" stroke-width="2"/><text x="${x}" y="${y + 3}" text-anchor="middle" class="c4t" font-size="16" style="fill:#c23a5e;font-weight:700">${t}</text></g>`; };
+const c4L = (a, b, c = '#33405a', w = 4, ex = '') => `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="${c}" stroke-width="${w}" stroke-linecap="round" ${ex}/>`;
+const c4poly = (P, fill = '#bcd6f2', st = '#2f5f9e', w = 3) => `<polygon points="${P.map(p => p.join(',')).join(' ')}" fill="${fill}" stroke="${st}" stroke-width="${w}" stroke-linejoin="round"/>`;
+const c4fr = (x, y, a, n, c = '#33405a') => `<text x="${x}" y="${y - 3}" text-anchor="middle" class="c4t" style="fill:${c}">${a}</text><line x1="${x - 10}" x2="${x + 10}" y1="${y + 1}" y2="${y + 1}" stroke="${c}" stroke-width="2"/><text x="${x}" y="${y + 17}" text-anchor="middle" class="c4t" style="fill:${c}">${n}</text>`;
+const c4pol = (cx, cy, r, deg) => [cx + r * Math.cos(deg * Math.PI / 180), cy - r * Math.sin(deg * Math.PI / 180)];
+function c4wedge(cx, cy, r, a0, a1, fill) { const [x0, y0] = c4pol(cx, cy, r, a0), [x1, y1] = c4pol(cx, cy, r, a1); return a1 - a0 >= 359.9 ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>` : `<path d="M${cx} ${cy}L${x0} ${y0}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 0 ${x1} ${y1}Z" fill="${fill}"/>`; }
+function c4pie(cx, cy, r, n, k, fill = '#f0a03c') { let s = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff0cf" stroke="#7a5b2e" stroke-width="2"/>`; for (let i = 0; i < n; i++) { const a0 = 90 - (i + 1) * 360 / n, a1 = 90 - i * 360 / n, [x, y] = c4pol(cx, cy, r, a0); if (i < k) s += c4wedge(cx, cy, r, a0, a1, fill); s += c4L([cx, cy], [x, y], '#7a5b2e', 1.5); } return s; }
+const c4cells = (x, y, n, k, W, H, c = '#f0a03c') => Array.from({ length: n }, (_, i) => `<rect x="${x + i * W / n}" y="${y}" width="${W / n}" height="${H}" fill="${i < k ? c : '#fff'}" stroke="#7a5b2e" stroke-width="1.5"/>`).join('');
+function c4grid(x, y, v, cell = 16, base = 0) { let s = ''; for (let i = 0; i < 100; i++) { const r = Math.floor(i / 10), c = i % 10; s += `<rect x="${x + c * cell}" y="${y + r * cell}" width="${cell}" height="${cell}" fill="${i < v ? (base && i >= base ? '#f0a03c' : '#6ea8dc') : '#fff'}" stroke="#aab3c2" stroke-width=".8"/>`; } return s; }
+function c4angle(d, tag) { // 角：黑邊固定、紅邊轉；綠色虛線是直角
+  const C = [160, 125], R = 105, e = c4pol(C[0], C[1], R, d);
+  return c4s(145, `${c4wedge(C[0], C[1], 42, 0, d, '#ffb3a7')}<path d="M${C[0]} ${C[1]}h34v-34h-34z" fill="#3d9970" fill-opacity=".14" stroke="#3d9970" stroke-width="2" stroke-dasharray="5 4"/>${c4L(C, [C[0] + R, C[1]], '#33405a', 6)}${c4L(C, e, '#d6476b', 6)}<circle cx="${C[0]}" cy="${C[1]}" r="6" fill="#33405a"/>${c4x(C[0] + 74, 142, `${Math.round(d)} 度`, { s: 18 })}${tag ? c4tag(70, 28, tag) : ''}`);
+}
+function c4clock(d, tag) { // 鐘面的長針從 12 轉出去，轉過的地方塗色
+  const C = [160, 96], R = 84; let s = `<circle cx="${C[0]}" cy="${C[1]}" r="${R + 6}" fill="#fff" stroke="#33405a" stroke-width="3"/>`;
+  s += d >= 359.9 ? `<circle cx="${C[0]}" cy="${C[1]}" r="50" fill="#ffb3a7"/>` : `<path d="M${C[0]} ${C[1]}L${C[0]} ${C[1] - 50}A50 50 0 ${d > 180 ? 1 : 0} 1 ${C[0] + 50 * Math.sin(d * Math.PI / 180)} ${C[1] - 50 * Math.cos(d * Math.PI / 180)}Z" fill="#ffb3a7"/>`;
+  for (let h = 1; h <= 12; h++) { const a = h * 30 * Math.PI / 180; s += c4x(C[0] + 72 * Math.sin(a), C[1] + 5 - 72 * Math.cos(a), h, { s: 13 }); }
+  s += c4L(C, [C[0], C[1] - 60], '#b9c2d0', 5, 'stroke-dasharray="6 6"') + c4L(C, [C[0] + 60 * Math.sin(d * Math.PI / 180), C[1] - 60 * Math.cos(d * Math.PI / 180)], '#d6476b', 6) + `<circle cx="${C[0]}" cy="${C[1]}" r="6" fill="#33405a"/>`;
+  return c4s(195, s + c4x(280, 30, `${Math.round(d)} 度`, { s: 18 }) + (tag ? c4tag(52, 30, tag) : ''));
+}
+const c4angAt = (P, i) => { const a = P[i], b = P[(i + 1) % 3], c = P[(i + 2) % 3], u = [b[0] - a[0], b[1] - a[1]], v = [c[0] - a[0], c[1] - a[1]]; return Math.acos((u[0] * v[0] + u[1] * v[1]) / (Math.hypot(...u) * Math.hypot(...v))) * 180 / Math.PI; };
+function c4triA(P, tag) { // 三角形標出三個角的度數，最大的角標紅
+  const r = [Math.round(c4angAt(P, 0)), Math.round(c4angAt(P, 1))]; r.push(180 - r[0] - r[1]); const m = r.indexOf(Math.max(...r)), cx = (P[0][0] + P[1][0] + P[2][0]) / 3, cy = (P[0][1] + P[1][1] + P[2][1]) / 3;
+  return c4s(170, c4poly(P) + P.map((p, i) => { const dx = cx - p[0], dy = cy - p[1], l = Math.hypot(dx, dy); return c4x(p[0] + dx / l * 30, p[1] + dy / l * 30 + 5, r[i], { s: i === m ? 20 : 16, f: i === m ? '#d6476b' : '#33405a' }); }).join('') + (tag ? c4tag(100, 22, tag) : ''));
+}
+function c4triS(a, b, c, tag) { // 依三邊長畫三角形：a 左邊、b 右邊、c 底邊
+  const k = 15, cx = (c * c + a * a - b * b) / (2 * c), h = Math.sqrt(Math.max(a * a - cx * cx, 1)), x0 = 160 - c * k / 2, y0 = 150, A = [x0, y0], B = [x0 + c * k, y0], T = [x0 + cx * k, y0 - h * k];
+  const col = (v, o1, o2) => v === o1 || v === o2 ? '#d6476b' : '#2f5f9e';
+  return c4s(170, c4poly([A, B, T], '#e6f0fa', '#2f5f9e', 2) + c4L(A, T, col(a, b, c), 5) + c4L(B, T, col(b, a, c), 5) + c4L(A, B, col(c, a, b), 5) + c4x((A[0] + T[0]) / 2 - 16, (A[1] + T[1]) / 2 + 2, a, { s: 18 }) + c4x((B[0] + T[0]) / 2 + 16, (B[1] + T[1]) / 2 + 2, b, { s: 18 }) + c4x((A[0] + B[0]) / 2, y0 + 18, c, { s: 18 }) + (tag ? c4tag(64, 26, tag) : ''));
+}
+function c4bars(labels, vals, stage, tag, top) { // stage 0 只有數字、1 一格一格疊、2 有刻度
+  const X = 46, Y = 150, cw = 250 / labels.length, u = 130 / top; let s = '';
+  if (stage === 0) return c4s(170, labels.map((l, i) => c4x(160, 34 + i * 34, `${l}：${vals[i]} 票`, { s: 19 })).join(''));
+  if (stage === 2) for (let v = 0; v <= top; v += 2) s += `<line x1="${X}" x2="${X + 250}" y1="${Y - v * u}" y2="${Y - v * u}" stroke="#d8dde5"/>` + c4x(X - 8, Y - v * u + 5, v, { a: 'end', s: 13 });
+  labels.forEach((l, i) => { const x = X + i * cw + cw * .2, w = cw * .6; if (stage === 1) for (let k = 0; k < vals[i]; k++) s += `<rect x="${x}" y="${Y - (k + 1) * u}" width="${w}" height="${u - 2}" fill="#6ea8dc"/>`; else s += `<rect x="${x}" y="${Y - vals[i] * u}" width="${w}" height="${vals[i] * u}" rx="3" fill="#6ea8dc"/>`; s += c4x(x + w / 2, Y + 18, l, { s: 14 }); });
+  s += c4L([X, Y], [X + 250, Y], '#33405a', 2); if (stage === 2) s += c4L([X, Y], [X, Y - top * u], '#33405a', 2);
+  return c4s(172, s + (tag ? c4tag(250, 18, tag) : ''));
+}
+function c4lineChart(labels, vals, n, tag, top, step) { // n 段線
+  const X = 46, Y = 150, cw = 250 / labels.length, u = 130 / top, P = vals.map((v, i) => [X + i * cw + cw / 2, Y - v * u]); let s = '';
+  for (let v = 0; v <= top; v += step) s += `<line x1="${X}" x2="${X + 250}" y1="${Y - v * u}" y2="${Y - v * u}" stroke="#d8dde5"/>` + c4x(X - 8, Y - v * u + 5, v, { a: 'end', s: 13 });
+  labels.forEach((l, i) => { s += c4x(P[i][0], Y + 18, l, { s: 14 }); });
+  if (n) s += `<polyline points="${P.slice(0, n + 1).map(p => p.join(',')).join(' ')}" fill="none" stroke="#d6476b" stroke-width="4"/>`;
+  s += P.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="5" fill="#d6476b"/>`).join('') + c4L([X, Y], [X + 250, Y], '#33405a', 2) + c4L([X, Y], [X, Y - top * u], '#33405a', 2);
+  return c4s(172, s + (tag ? c4tag(100, 18, tag) : ''));
+}
+function c4gap(st, tag) { // 三個人的身高：從 0 畫、切掉下面、切掉再做記號
+  const v = [131, 135, 138], n = ['小安', '小宇', '小晴'], Y = 148, X = 54, base = st ? 120 : 0, u = st ? 6 : .85; let s = '';
+  (st ? [120, 130, 140] : [0, 50, 100, 150]).forEach(g => { s += `<line x1="${X}" x2="300" y1="${Y - (g - base) * u}" y2="${Y - (g - base) * u}" stroke="#d8dde5"/>` + c4x(X - (st === 2 ? 22 : 8), Y - (g - base) * u + 5, g, { a: 'end', s: 13 }); });
+  v.forEach((x, i) => { s += `<rect x="${X + 16 + i * 80}" y="${Y - (x - base) * u}" width="50" height="${(x - base) * u}" rx="3" fill="#6ea8dc"/>` + c4x(X + 41 + i * 80, Y + 18, n[i], { s: 14 }) + c4x(X + 41 + i * 80, Y - (x - base) * u - 5, x, { s: 13 }); });
+  s += c4L([X, Y], [300, Y], '#33405a', 2) + c4L([X, st === 2 ? Y - 24 : Y], [X, 8], '#33405a', 2);
+  if (st === 2) s += `<path d="M${X} ${Y}l-7 -5 14 -6 -14 -6 14 -6 -7 -5" fill="none" stroke="#d6476b" stroke-width="3"/>`;
+  return c4s(172, s + (tag ? c4tag(120, 20, tag) : ''));
+}
+const c4SP = [[0, -44], [58, 26], [-40, 26]];
+function c4congr(t, tag) { // 右邊那片轉一轉、移過去，疊在左邊那片上
+  const at = (cx, cy, r) => c4SP.map(p => { const a = r * Math.PI / 180; return [cx + p[0] * Math.cos(a) - p[1] * Math.sin(a), cy + p[0] * Math.sin(a) + p[1] * Math.cos(a)]; }), A = at(92, 90, 0), B = at(232 - 140 * t, 80 + 10 * t, 180 * (1 - t));
+  return c4s(150, c4poly(A, '#fff0cf', '#7a5b2e') + c4poly(B, '#6ea8dc99', '#2f5f9e') + (tag ? c4L(A[1], A[2], '#d6476b', 6) + c4tag(70, 138, '對應邊') + c4tag(232, 28, tag) : ''));
+}
+const c4PIE7 = (st, tag) => { // 7 個 1/4 片：散的、4 片拼成一個、寫成一個又幾分之幾
+  const w = (x, y) => `<g transform="translate(${x} ${y})">${c4wedge(0, 18, 30, 45, 135, '#f0a03c')}<path d="M0 18L21 -3A30 30 0 0 0 -21 -3Z" fill="none" stroke="#7a5b2e" stroke-width="1.5"/></g>`; let s = '';
+  if (st === 0) { for (let i = 0; i < 7; i++) s += w(30 + (i % 4) * 56 + (i > 3 ? 28 : 0), 18 + (i > 3 ? 60 : 0)); }
+  else { s += c4pie(82, 70, 54, 4, 4); if (st === 1) for (let i = 0; i < 3; i++) s += w(180 + i * 48, 50); else s += c4pie(228, 70, 54, 4, 3); }
+  return c4s(140, s + (st === 2 ? `${c4x(82, 136, '1 個', { s: 16 })}${c4x(228, 136, '和 3/4 個', { s: 16 })}` : '') + (tag ? c4tag(155, 22, tag) : ''));
+};
+function c4road(st, tag) { // 兩條路：斜斜相交、直角相交、永遠不碰
+  const a = [[20, 125], [300, 125]], D = [[60, 28], [255, 152]], U = [[160, 12], [160, 158]], P = [[20, 45], [300, 45]], b = [D, U, P][st];
+  return c4s(170, c4L(a[0], a[1], '#6ea8dc', 14) + c4L(b[0], b[1], '#f0a03c', 14) + (st === 1 ? `<path d="M160 125h18v-18h-18z" fill="none" stroke="#d6476b" stroke-width="3"/>` : '') + (tag ? c4tag(st === 1 ? 240 : 160, st === 1 ? 62 : 86, tag) : ''));
+}
+const c4QS = [[[60, 30], [290, 30], [240, 130], [10, 130]], [[90, 30], [220, 30], [290, 130], [20, 130]], [[50, 25], [230, 50], [290, 130], [20, 110]]];
+function c4quadPair(i, tag) { // 同一組對邊同色
+  const P = c4QS[i], c = i === 0 ? ['#d6476b', '#3d9970', '#d6476b', '#3d9970'] : i === 1 ? ['#d6476b', '#2f5f9e', '#d6476b', '#2f5f9e'] : ['#2f5f9e', '#2f5f9e', '#2f5f9e', '#2f5f9e'];
+  return c4s(160, c4poly(P, '#e6f0fa', '#2f5f9e', 1) + P.map((p, k) => c4L(p, P[(k + 1) % 4], c[k], 6)).join('') + (tag ? c4tag(160, 150, tag) : ''));
+}
+function c4rhomb(lean, tag) { // 四根一樣長的吸管，推歪
+  const L = 92, x0 = 94 - lean * .4, y0 = 150, r = lean * Math.PI / 180, dx = L * Math.sin(r), dy = L * Math.cos(r), P = [[x0, y0], [x0 + L, y0], [x0 + L + dx, y0 - dy], [x0 + dx, y0 - dy]];
+  return c4s(165, c4poly(P, '#bcd6f2', '#2f5f9e', 6) + P.map(p => `<circle cx="${p[0]}" cy="${p[1]}" r="6" fill="#f0a03c"/>`).join('') + (tag ? c4tag(64, 26, tag) : ''));
+}
+function c4diag(st, tag) { // 連連看：旁邊的角、對面的角
+  const P = [[60, 25], [290, 25], [250, 135], [20, 135]], names = 'ABCD', L = [[0, 1], [0, 2], [1, 3]][st];
+  return c4s(160, c4poly(P, '#fff0cf', '#7a5b2e', 3) + (st ? c4poly(st === 1 ? [P[0], P[1], P[2]] : [P[1], P[2], P[3]], '#f4a9a080', 'none', 0) : '') + c4L(P[L[0]], P[L[1]], '#d6476b', 6) + P.map((p, i) => `<circle cx="${p[0]}" cy="${p[1]}" r="6" fill="#33405a"/>` + c4x(p[0] + (i === 1 || i === 2 ? 14 : -14), p[1] + 5, names[i], { s: 15 })).join('') + (tag ? c4tag(155, 152, tag) : ''));
+}
+function c4round(v, tag) { // 數線看靠近誰
+  const x = 40 + (v - 3400) * 2.4, near = v >= 3450 ? 3500 : 3400;
+  return c4s(120, `${c4L([40, 72], [280, 72], '#33405a', 4)}${c4L([40, 60], [40, 84], '#33405a', 3)}${c4L([280, 60], [280, 84], '#33405a', 3)}${c4L([160, 64], [160, 80], '#aab3c2', 3)}${c4x(40, 104, 3400, { s: 16 })}${c4x(160, 104, 3450, { s: 13 })}${c4x(280, 104, 3500, { s: 16 })}<path d="M${x} 66l-9 -16h18z" fill="#d6476b"/>${c4x(x, 42, Math.round(v), { s: 17, f: '#d6476b' })}${c4L([x, 72], [near === 3500 ? 280 : 40, 72], '#f0a03c', 7)}${tag ? c4tag(70, 18, '概數') + c4tag(235, 18, tag) : ''}`);
+}
+function c4boxes(st, tag) { // 87 顆橘子，每箱 10 顆
+  let s = ''; for (let i = 0; i < 9; i++) { const x = 16 + (i % 5) * 60, y = 8 + Math.floor(i / 5) * 58, last = i === 8, show = !last || st !== 2; s += `<rect x="${x}" y="${y}" width="50" height="46" rx="5" fill="${last ? (st === 1 ? '#ffe9b0' : '#f4f6fa') : '#ffd9a0'}" stroke="${last && st === 2 ? '#d6476b' : '#7a5b2e'}" stroke-width="2"${last && st === 0 ? ' stroke-dasharray="5 4"' : ''}/>` + (show ? c4x(x + 25, y + 30, last ? 7 : 10, { s: 20 }) : c4x(x + 25, y + 32, '✕', { s: 24, f: '#d6476b' })); }
+  return c4s(142, s + (tag ? c4tag(160, 130, tag) : ''));
+}
+function c4est(st, tag) { // 48 元買 3 個，估一下
+  const lab = ['48', '48', '48']; let s = '';
+  lab.forEach((_, i) => { const x = 22 + i * 70; s += `<rect x="${x}" y="10" width="62" height="50" rx="8" fill="#ffe9b0" stroke="#a9702a" stroke-width="2"/>${c4x(x + 31, st ? 32 : 42, st ? '差不多' : 48, { s: st ? 13 : 22 })}${st ? c4x(x + 31, 52, 50, { s: 20, f: '#d6476b' }) : ''}`; });
+  s += c4x(268, 42, '3 個', { s: 18 });
+  if (st >= 1) s += c4x(160, 90, '50×3＝150', { s: 22 });
+  if (st >= 2) s += `<rect x="30" y="104" width="195" height="18" fill="#6ea8dc"/><rect x="30" y="104" width="260" height="18" fill="none" stroke="#33405a" stroke-width="2"/>${c4x(290, 140, '200 元', { a: 'end', s: 14 })}${c4x(30, 140, '大約 150 元', { a: 'start', s: 14 })}`;
+  return c4s(148, s + (tag ? c4tag(70, 96, tag) : ''));
+}
+function c4strip(k, tag) { // 1/2 條切細
+  const n = 2 * k;
+  return c4s(120, `${c4cells(30, 8, 2, 1, 260, 34)}${c4cells(30, 62, n, k, 260, 34, '#d6476b')}${c4x(160, 30, '原來的一半', { s: 14 })}${c4x(30 + 65, 86, `${k}/${n}`, { s: 18, f: '#fff' })}${tag ? c4tag(160, 112, tag) : ''}`);
+}
+function c4day(m, tag) { // 一天 24 小時的長條
+  const x = 16 + m / 1440 * 288, h = Math.floor(m / 60), P = ['上午', '中午', '下午'][m < 720 ? 0 : m === 720 ? 1 : 2]; let s = `<rect x="16" y="66" width="288" height="26" fill="#27305a"/><rect x="88" y="66" width="144" height="26" fill="#ffd97a"/><rect x="16" y="66" width="288" height="26" fill="none" stroke="#33405a" stroke-width="2"/>`;
+  [0, 6, 12, 18, 24].forEach(v => { s += c4x(16 + v * 12, 112, v, { s: 14 }); });
+  s += `<path d="M${x} 64l-8 -12h16z" fill="#d6476b"/>${c4x(160, 34, `${h}:00`, { s: 30, f: '#d6476b' })}${c4x(74, 30, P, { s: 16 })}${c4x(74, 48, `${h > 12 ? h - 12 : h} 時`, { s: 16 })}`;
+  return c4s(122, s + (tag ? c4tag(258, 28, tag) : ''));
+}
+function c4ell(st, tag) { // L 形甲板，每格 1 平方公尺
+  const c = 24, X = 60, Y = 8, cells = []; for (let y = 0; y < 5; y++) for (let x = 0; x < (y < 3 ? 3 : 6); x++) cells.push([x, y]);
+  let s = cells.map(([x, y]) => `<rect x="${X + x * c}" y="${Y + y * c}" width="${c}" height="${c}" fill="${st >= 2 ? (y < 3 ? '#f4c17a' : '#a9d0f0') : '#e6edf5'}" stroke="#7a8aa0"/>`).join('');
+  if (st >= 1) s += c4L([X - 8, Y + 3 * c], [X + 3 * c + 6, Y + 3 * c], '#d6476b', 4, 'stroke-dasharray="6 5"');
+  if (st >= 2) s += `${c4x(X + 36, Y + 42, '3×3＝9', { s: 14 })}${c4x(X + 72, Y + 98, '6×2＝12', { s: 15 })}${c4x(262, 72, '9＋12', { s: 17 })}${c4x(262, 94, '＝21', { s: 17 })}`;
+  return c4s(136, s + (tag ? c4tag(248, 22, tag) : ''));
+}
+const c4Calc = (lines, tag) => c4s(150, lines.map((l, i) => `${c4x(160, 42 + i * 42, l[0], { s: l[2] || 23, f: l[1] || '#33405a' })}`).join('') + (tag ? c4tag(160, 136, tag) : ''));
+
+const CONCEPTS = [
+  { key: 'yi', title: '億和千萬位', terms: ['億', '千萬位'], game: 'big', sem: '四上', when: ['big:build', 'big:read', 'big:money', 'big:cmp'],
+    ask: '一座體育場坐 1 萬人。如果有好多好多座，一共是幾人？定位板放得下嗎？', tryIt: '往右拖，體育場一次多很多。', states: [10, 1000, 10000],
+    pic: (n, tg) => { const s = String(n * 10000), H = ['', '', '百萬', '十萬', '萬', '千', '百', '十', '個'], W = 32, X = 12; let o = c4x(160, 22, `${fmt(n)} 座體育場`, { s: 18 }); H.forEach((h, i) => { const x = X + i * W + (i > 0 ? 4 : 0) + (i > 4 ? 4 : 0), d = s.length >= 9 - i ? s[i - (9 - s.length)] : '', over = i === 0; o += `<rect x="${x}" y="62" width="${W - 3}" height="44" rx="4" fill="${over ? (d ? '#ffd5cf' : '#f4f6fa') : '#fff'}" stroke="${over ? '#d6476b' : '#33405a'}" stroke-width="2"${over && !d ? ' stroke-dasharray="5 4"' : ''}/>${c4x(x + 14, 92, d, { s: 22 })}${h ? c4x(x + 14, 54, h, { s: 12 }) : ''}`; }); return c4s(140, o + (tg ? `${c4tag(30, 128, '億')}${c4tag(92, 128, '千萬位')}${c4L([92, 114], [60, 108], '#c23a5e', 2)}` : '')); },
+    note: n => n === 10 ? '10 座：10 萬人' : n === 1000 ? '1000 座：1000 萬人，右邊 8 格都用上了' : '10000 座：10000 個萬，8 格放不下了！',
+    found: '1000 萬已經把 8 格放滿。10000 個萬要第 9 格，需要一個新名字。', name: `一萬個一萬，叫 1 ${c4T('億')}。8 格裡最左邊那一格，叫${c4T('千萬位')}。`, loop: [1, 2],
+    check: { q: '臺灣大約 2300 萬人，寫成 23000000。最左邊的 2 在哪一位？', pic: () => '<div class="u-big num">23000000</div>', opts: ['百萬位', '千萬位', '億位'], a: 1, why: '從右邊數過來，第 8 位是哪一位？', ok: '對了！第 8 位是千萬位。' } },
+  { key: 'trydiv', title: '試商', terms: ['試商'], game: 'divv', sem: '四上', when: ['divv:try'],
+    ask: '92 顆橘子，每箱裝 23 顆。到底能裝幾箱？一下子看不出來，怎麼辦？', tryIt: '往右拖，猜猜看裝幾箱。', states: [5, 3, 4],
+    pic: (k, tg) => { const u = 270 / 115, X = 22; let o = `<rect x="${X}" y="52" width="${92 * u}" height="44" fill="#fff" stroke="#33405a" stroke-width="3"/>${c4L([X + 92 * u, 44], [X + 92 * u, 104], '#33405a', 3)}${c4x(X + 92 * u, 36, '92 顆', { s: 15 })}`; for (let i = 0; i < k; i++) o += `<rect x="${X + i * 23 * u + 1}" y="56" width="${23 * u - 2}" height="36" rx="3" fill="${(i + 1) * 23 > 92 ? '#f4a9a0' : '#ffd9a0'}" stroke="#a9702a"/>${c4x(X + (i + .5) * 23 * u, 80, 23, { s: 14 })}`; return c4s(130, o + (tg ? c4tag(80, 22, '試商') : '')); },
+    note: k => k === 5 ? '23×5＝115，比 92 多：猜太多了' : k === 3 ? '23×3＝69，還剩 23 顆：還裝得下' : '23×4＝92，剛好裝完！',
+    found: '猜太多就改小，還裝得下就改大，幾次就找到了：4 箱。', name: `先猜一個商，乘乘看，再改大或改小，這樣找商叫${c4T('試商')}。`, loop: [0, 1, 2],
+    check: { q: '78 顆蘋果，每袋裝 26 顆。試商先試 2 袋，還剩 26 顆。商要怎麼改？', pic: () => c4Calc([['26×2＝52'], ['78－52＝26']]), opts: ['改大一點', '改小一點', '不用改'], a: 0, why: '剩下的還裝得下一袋嗎？', ok: '對了！還裝得下，商改成 3。' } },
+  { key: 'acute', title: '銳角和鈍角', terms: ['銳角', '鈍角'], game: 'deg', sem: '四上', when: ['deg:kind'],
+    ask: '一本書可以打開小小的，也可以打開大大的。和綠色的直角比一比，有幾種情形？', tryIt: '往右拖，把書打開。', states: [40, 90, 130], tween: 1,
+    pic: (d, tg) => c4angle(d, tg ? (d < 90 ? '銳角' : d > 90 ? '鈍角' : '') : ''),
+    note: d => d < 90 ? '紅邊在綠框裡面：比直角小' : d === 90 ? '紅邊貼著綠框：剛好是直角' : d > 90 ? '紅邊跑到綠框外面：比直角大' : '',
+    found: '比直角小、剛好直角、比直角大，一共三種情形。', name: `比直角小的角叫${c4T('銳角')}；比直角大、又還沒變成一直線的角叫${c4T('鈍角')}。`, loop: [0, 2],
+    check: { q: '雨傘打開時，傘骨張開 120 度。這是什麼角？', pic: () => c4angle(120), opts: ['銳角', '直角', '鈍角'], a: 2, why: '120 度比 90 度大還是小？', ok: '對了！比直角大，是鈍角。' } },
+  { key: 'turn', title: '旋轉角、平角、周角', terms: ['旋轉角', '平角', '周角'], game: 'deg', sem: '四上', when: ['deg:kind', 'deg:clock'],
+    ask: '時鐘的長針從 12 開始走。走半圈、走一整圈，轉出來的角有多大？', tryIt: '往右拖，讓長針轉起來。', states: [90, 180, 360], tween: 1,
+    pic: (d, tg) => c4clock(d, tg ? (d >= 359 ? '周角' : d === 180 ? '平角' : '旋轉角') : ''),
+    note: d => d === 90 ? '走到 3：轉了 90 度' : d === 180 ? '走到 6：轉了 180 度，兩條線變成一直線' : d >= 360 ? '走回 12：轉了 360 度，一整圈' : '',
+    found: '角不一定是畫好的，轉一轉也會轉出角來。半圈 180 度，一圈 360 度。', name: `像這樣轉出來的角叫${c4T('旋轉角')}。轉半圈的 180 度叫${c4T('平角')}，轉一圈的 360 度叫${c4T('周角')}。`, loop: [0, 1, 2],
+    check: { q: '電風扇的頭，從最左邊轉到最右邊，轉了 180 度。這個角叫什麼？', pic: () => c4clock(180), opts: ['銳角', '平角', '周角'], a: 1, why: '180 度是半圈，還是一整圈？', ok: '對了！180 度是平角。' } },
+  { key: 'triang', title: '看角分三角形', terms: ['銳角三角形', '直角三角形', '鈍角三角形'], game: 'tri', sem: '四上', when: ['tri:angle'],
+    ask: '機翼上的三角形，有的尖尖、有的扁扁。看最大的那個角，可以怎麼分組？', tryIt: '往右拖，換一片機翼看。', states: [0, 1, 2],
+    pic: (i, tg) => c4triA([[[50, 150], [270, 150], [170, 30]], [[70, 150], [270, 150], [70, 40]], [[20, 150], [190, 150], [290, 62]]][i], tg ? ['銳角三角形', '直角三角形', '鈍角三角形'][i] : ''),
+    note: i => ['最大的角也比直角小', '最大的角剛好是直角', '最大的角比直角大'][i],
+    found: '只要看最大的角，就能分成三組。', name: `最大的角比直角小，叫${c4T('銳角三角形')}；有直角叫${c4T('直角三角形')}；有比直角大的角，叫${c4T('鈍角三角形')}。`, loop: [0, 1, 2],
+    check: { q: '三角旗的三個角是 30、40、110 度。它是什麼三角形？', pic: () => c4triA([[20, 150], [290, 150], [180, 58]]), opts: ['銳角三角形', '直角三角形', '鈍角三角形'], a: 2, why: '最大的角 110 度，和直角比呢？', ok: '對了！110 度比直角大，是鈍角三角形。' } },
+  { key: 'tside', title: '看邊分三角形', terms: ['等腰三角形', '正三角形'], game: 'tri', sem: '四上', when: ['tri:side'],
+    ask: '用吸管做屋頂，要左右一樣斜才不會歪。吸管要怎麼挑？', tryIt: '往右拖，換一組吸管（單位：公分）。', states: [[7, 5, 8], [7, 7, 6], [7, 7, 7]],
+    pic: (s, tg) => c4triS(s[0], s[1], s[2], tg ? (s[0] === s[1] && s[1] === s[2] ? '正三角形' : s[0] === s[1] ? '等腰三角形' : '') : ''),
+    note: s => s[1] === 5 ? '三根都不一樣長：屋頂歪一邊' : s[2] === 6 ? '兩根一樣長：左右一樣斜' : '三根都一樣長：怎麼轉都一樣',
+    found: '看有幾根一樣長，就能分出不同的三角形。', name: `兩邊一樣長的叫${c4T('等腰三角形')}；三邊都一樣長的叫${c4T('正三角形')}。`, loop: [1, 2],
+    check: { q: '衣架兩條斜邊都是 20 公分，下面那條 34 公分。它是什麼三角形？', pic: () => c4s(120, c4poly([[40, 100], [280, 100], [160, 30]], '#e6f0fa', '#2f5f9e') + c4x(84, 58, 20, { s: 18 }) + c4x(236, 58, 20, { s: 18 }) + c4x(160, 118, 34, { s: 18 })), opts: ['等腰三角形', '正三角形', '一般三角形'], a: 0, why: '有幾條邊一樣長？', ok: '對了！兩邊一樣長，是等腰三角形。' } },
+  { key: 'congr', title: '全等', terms: ['全等', '對應邊'], game: 'tri', sem: '四上', when: ['tri:flip', 'tri:corr'],
+    ask: '飛船左右兩片機翼要一模一樣。方向不同，要怎麼知道它們真的一樣？', tryIt: '往右拖，把藍色那片移過去。', states: [0, .5, 1], tween: 1,
+    pic: (t, tg) => c4congr(t, tg && t === 1 ? '全等' : ''),
+    note: t => t === 0 ? '方向不一樣，看不出來' : t < 1 ? '邊轉邊移' : '完全疊在一起，一點都沒有多出來！',
+    found: '轉一轉再疊上去，每個邊、每個角都對得剛剛好。', name: `能完全疊在一起的兩個圖形叫${c4T('全等')}。疊在一起的邊叫${c4T('對應邊')}，一樣長。`, loop: [0, 2],
+    check: { q: '兩張全等的郵票。一張的長邊是 5 公分，它在另一張的對應邊是幾公分？', pic: () => c4congr(1), opts: ['3', '5', '10'], a: 1, why: '全等的圖形疊起來，那條邊會一樣長嗎？', ok: '對了！對應邊一樣長，是 5 公分。' } },
+  { key: 'impro', title: '真分數和假分數', terms: ['真分數', '假分數'], game: 'fra', sem: '四上', when: ['fra:kind', 'fra:pack', 'fra:line'],
+    ask: '一個派切成 4 片。如果拿了好幾片，會不會超過 1 個派？', tryIt: '往右拖，一直多拿幾片。', states: [3, 4, 7],
+    pic: (k, tg) => c4s(150, c4pie(86, 68, 58, 4, Math.min(k, 4)) + c4pie(232, 68, 58, 4, Math.max(k - 4, 0)) + c4fr(160, 128, k, 4, '#d6476b') + (tg ? c4tag(258, 138, k < 4 ? '真分數' : '假分數') : '')),
+    note: k => k === 3 ? `${fracHtml(3, 4)} 個：比 1 個少` : k === 4 ? `${fracHtml(4, 4)} 個：剛好 1 個` : `${fracHtml(7, 4)} 個：比 1 個多`,
+    found: '上面的數比下面小，就還不到 1 個；一樣大或更大，就有 1 個以上。', name: `分子比分母小的叫${c4T('真分數')}；分子和分母一樣或更大的，叫${c4T('假分數')}。`, loop: [0, 1, 2],
+    check: { q: `一壺果汁有 ${fracHtml(6, 5)} 公升，這個分數是什麼分數？`, pic: () => c4s(70, c4cells(20, 8, 5, 5, 135, 40) + c4cells(165, 8, 5, 1, 135, 40)), opts: ['真分數', '假分數'], a: 1, why: '分子 6 和分母 5，哪一個大？', ok: '對了！分子比分母大，是假分數。' } },
+  { key: 'mixedf', title: '帶分數', terms: ['帶分數'], game: 'fra', sem: '四上', when: ['fra:kind', 'fra:pack', 'fra:unpack'],
+    ask: '有 7 片派，每片是 1/4 個。要怎麼說，別人才馬上知道有多少？', tryIt: '往右拖，把 4 片拼成一個。', states: [0, 1, 2],
+    pic: (s, tg) => c4PIE7(s, tg && s === 2 ? '帶分數' : ''),
+    note: s => ['7 片散散的，看不出有多少', '4 片拼成 1 個，還剩 3 片', '1 個，和 3/4 個'][s],
+    found: `${fracHtml(7, 4)} 個也可以說成「1 個和 3/4 個」，一聽就知道比 1 個多一些。`, name: `整數帶著一個真分數，像 ${mixHtml(1, 3, 4)}，叫${c4T('帶分數')}，念作一又四分之三。`, loop: [1, 2],
+    check: { q: `${fracHtml(9, 4)} 盒蛋糕，每 4 塊是 1 盒。換成帶分數是幾盒？`, pic: () => c4s(60, c4cells(15, 8, 4, 4, 90, 36) + c4cells(115, 8, 4, 4, 90, 36) + c4cells(215, 8, 4, 1, 90, 36)), opts: ['2 又 1/4', '1 又 5/4', '4 又 1/4'], a: 0, why: '4 塊一盒，9 塊能裝滿幾盒？還剩幾塊？', ok: '對了！裝滿 2 盒，還剩 1 塊。' } },
+  { key: 'ftimes', title: '分數的整數倍', terms: ['整數倍'], game: 'fra', sem: '四下', when: ['fra:times'],
+    ask: '每杯燃料 2/5 公升。裝 3 杯一共是幾公升？', tryIt: '往右拖，一杯一杯加上去。', states: [1, 2, 3],
+    pic: (k, tg) => c4s(120, Array.from({ length: 3 }, (_, i) => c4cells(30, 8 + i * 34, 5, i < k ? 2 : 0, 200, 28)).join('') + c4x(278, 60, `${2 * k}/5`, { s: 22, f: '#d6476b' }) + (tg ? c4tag(278, 24, '整數倍') : '')),
+    note: k => `每杯 2/5 公升 × ${k} 杯，一共 ${2 * k} 個 1/5 公升`,
+    found: '一樣多的東西重複 3 次，只要數有幾個 1/5：2×3＝6，是 6/5 公升。', name: `同樣的 2/5 重複 3 次，就是 2/5 的 3 倍，叫分數的${c4T('整數倍')}。寫成 每份量×份數：2/5×3。`, loop: [0, 1, 2],
+    check: { q: '每瓶果汁 3/8 公升，買 4 瓶。求整數倍 3/8×4，是幾公升？', pic: () => c4s(70, Array.from({ length: 4 }, (_, i) => c4cells(8 + i * 77, 8, 8, 3, 72, 36)).join('')), opts: ['7/8', '12/8', '3/32'], a: 1, why: '3 個 1/8，重複 4 次，一共幾個 1/8？', ok: '對了！3×4＝12，是 12/8 公升。' } },
+  { key: 'odd', title: '奇數和偶數', terms: ['奇數', '偶數'], game: 'pat', sem: '四上', when: ['pat:odd'],
+    ask: '大家兩個兩個牽手跳舞。每個人都能找到伴嗎？', tryIt: '往右拖，換不同的人數。', states: [6, 7, 10],
+    pic: (n, tg) => { let o = ''; for (let i = 0; i < n; i++) { const x = 34 + Math.floor(i / 2) * 50, y = i % 2 ? 76 : 28, alone = n % 2 && i === n - 1; o += `<circle cx="${x}" cy="${y}" r="15" fill="${alone ? '#f4a9a0' : '#6ea8dc'}" stroke="${alone ? '#d6476b' : '#2f5f9e'}" stroke-width="2"/>`; if (i % 2) o += c4L([x, 43], [x, 61], '#2f5f9e', 4); } return c4s(120, o + c4x(290, 110, `${n} 人`, { a: 'end', s: 17 }) + (tg ? c4tag(70, 110, n % 2 ? '奇數' : '偶數') : '')); },
+    note: n => n % 2 ? `${n} 人：剩下 1 個人沒有伴` : `${n} 人：每個人都有伴`,
+    found: '有些人數剛好配完，有些人數一定剩 1 個。', name: `兩個兩個配，剛好配完的數叫${c4T('偶數')}；一定剩 1 個的數叫${c4T('奇數')}。`, loop: [0, 1],
+    check: { q: '13 位球員兩人一組傳球。13 是什麼數？', pic: () => `<div class="u-big">⚽</div>`, opts: ['奇數', '偶數'], a: 0, why: '13 個兩個兩個配，會剩下嗎？', ok: '對了！會剩 1 個，13 是奇數。' } },
+  { key: 'expr', title: '併式', terms: ['併式'], game: 'mix', sem: '四上', when: ['mix:expr', 'mix:write'],
+    ask: '帶 100 元，買 3 個麵包，每個 20 元。要找回幾元？能不能只寫一行？', tryIt: '往右拖，一步一步算，最後合起來。', states: [0, 1, 2],
+    pic: (s, tg) => c4Calc(s === 0 ? [['每個 20 元 × 3 個', '', 16], ['20×3＝60']] : s === 1 ? [['20×3＝60', '#aab3c2'], ['100－60＝40']] : [['100－60＝40', '#aab3c2', 17], ['100－20×3＝40', '#d6476b', 26]], tg && s === 2 ? '併式' : ''),
+    note: s => ['先算麵包要多少錢', '再算要找回多少錢', '把 60 換成 20×3，兩行變一行！'][s],
+    found: '60 就是 20×3，放進第二行，一行就說完了。', name: `把幾個步驟合成一條算式，叫${c4T('併式')}。`, loop: [1, 2],
+    check: { q: '一盒 8 顆，買 5 盒，又吃掉 6 顆。哪一個併式對？', pic: () => '<div class="u-big">🍬</div>', opts: ['8×5－6', '8＋5－6', '8－6×5'], a: 0, why: '先想一共幾顆：每盒量×盒數，再減掉吃的。', ok: '對了！8×5－6＝34 顆。' } },
+  { key: 'order', title: '先乘除，後加減', terms: ['先乘除，後加減', '括號先算'], game: 'mix', sem: '四上', when: ['mix:expr', 'mix:write'], test: q => q.tokens.includes('(') || (q.tokens.some(t => t === '×' || t === '÷') && q.tokens.some(t => t === '＋' || t === '－')),
+    ask: '100－20×3，小華和小美算出來不一樣。算的是剛才的麵包，誰才對？', tryIt: '往右拖，看看每個人怎麼算。', states: [0, 1, 2],
+    pic: (s, tg) => c4Calc(s === 0 ? [['小華：100－20×3', '', 19], ['80×3＝240', '#d6476b']] : s === 1 ? [['小美：100－20×3', '', 19], ['100－60＝40', '#3d9970']] : [['3 人都有 100 元，每人花 20 元', '', 15], ['(100－20)×3＝240', '#3d9970']], tg ? (s === 2 ? '括號先算' : s === 1 ? '先乘除，後加減' : '') : ''),
+    note: s => ['先減再乘：找回 240 元？比 100 元還多，不合理！', '先算 3 個麵包的錢：找回 40 元，合理', '每人剩的錢要先算，就把它圈起來'][s],
+    found: '麵包的錢要先算才合理；想先算別的地方，就要圈起來。', name: `規定：${c4T('先乘除，後加減')}；有括號的，${c4T('括號先算')}。`, loop: [1, 2],
+    check: { q: '依照先乘除，後加減：50＋10×2 是多少？', pic: () => c4Calc([['50＋10×2']]), opts: ['120', '70', '62'], a: 1, why: '10×2 要先算。', ok: '對了！50＋20＝70。' } },
+  { key: 'dec2', title: '二位小數', terms: ['二位小數', '百分位'], game: 'dec', sem: '四上', when: ['dec:paint', 'dec:meter', 'dec:cmp', 'dec:calc'],
+    ask: '小魚跳了 35 公分，要寫成幾公尺？1 公尺切成 10 段太粗了，量不出來。', tryIt: '1 公尺切成 100 小格。往右拖，塗塗看。', states: [1, 10, 35],
+    pic: (v, tg) => c4s(172, c4grid(14, 6, v) + c4x(250, 60, `${v} 格`, { s: 20 }) + c4x(250, 100, `0.${String(v).padStart(2, '0')}`, { s: 30, f: '#d6476b' }) + c4x(250, 124, '公尺', { s: 15 }) + (tg ? c4tag(250, 22, '二位小數') + c4tag(254, 150, '百分位') + c4L([278, 106], [266, 136], '#c23a5e', 2) : '')),
+    note: v => v === 1 ? '1 格是 1 公分，寫成 0.01 公尺' : v === 10 ? '10 格是 10 公分，0.10 和 0.1 一樣多' : '35 格，就是 0.35 公尺',
+    found: '切成 100 格，一格是 0.01，小數點後面要有兩個數字。', name: `像 0.35 小數點後面有兩位，叫${c4T('二位小數')}。後面第二位記幾個 0.01，叫${c4T('百分位')}。`, loop: [0, 2],
+    check: { q: '一瓶水 2.46 公升，數字 6 在哪一位？', pic: () => '<div class="u-big num">2.46</div>', opts: ['個位', '十分位', '百分位'], a: 2, why: '小數點後面第幾個？', ok: '對了！第二位是百分位。' } },
+  { key: 'dtimes', title: '小數的整數倍', terms: ['整數倍'], game: 'dec', sem: '四下', when: ['dec:times'],
+    ask: '每瓶水 0.25 公升。裝 3 瓶，一共幾公升？', tryIt: '往右拖，一瓶一瓶加上去。', states: [1, 2, 3],
+    pic: (k, tg) => c4s(172, c4grid(14, 6, 25 * k, 16, 25 * (k - 1)) + c4x(250, 70, `${k} 瓶`, { s: 20 }) + c4x(250, 110, (.25 * k).toFixed(2), { s: 30, f: '#d6476b' }) + (tg ? c4tag(254, 150, '整數倍') : '')),
+    note: k => `每瓶 0.25 公升 × ${k} 瓶：${25 * k} 個 0.01，是 ${(.25 * k).toFixed(2)} 公升`,
+    found: '數有幾個 0.01：25×3＝75，就是 0.75。', name: `同樣的 0.25 重複 3 次，就是小數的${c4T('整數倍')}。寫成 每份量×份數：0.25×3。`, loop: [0, 1, 2],
+    check: { q: '每包糖 0.12 公斤，買 4 包。求整數倍 0.12×4，是幾公斤？', pic: () => c4s(172, c4grid(70, 6, 48)), opts: ['0.48', '0.16', '4.8'], a: 0, why: '12 個 0.01，重複 4 次。', ok: '對了！48 個 0.01，是 0.48 公斤。' } },
+  { key: 'perp', title: '垂直和平行', terms: ['垂直', '平行'], game: 'quad', sem: '四下', when: ['quad:lines', 'quad:name', 'quad:pairs', 'quad:diag'],
+    ask: '新城市要開兩條路。兩條路可以怎麼擺？', tryIt: '往右拖，換橘色那條路的方向。', states: [0, 1, 2],
+    pic: (s, tg) => c4road(s, tg ? ['', '垂直', '平行'][s] : ''),
+    note: s => ['碰在一起，歪歪的', '碰在一起，夾出一個直角', '再怎麼延長，都不會碰到'][s],
+    found: '有的會碰到，碰成直角最特別；有的永遠碰不到。', name: `兩條線相交成直角，叫${c4T('垂直')}；兩條線永遠碰不到，叫${c4T('平行')}。`, loop: [1, 2],
+    check: { q: '斑馬線上的每一條白線，一條一條都碰不到。它們是什麼關係？', pic: () => c4s(90, [0, 1, 2, 3, 4].map(i => `<rect x="${40 + i * 50}" y="8" width="26" height="72" fill="#aab3c2"/>`).join('')), opts: ['垂直', '平行', '都不是'], a: 1, why: '白線會碰到嗎？', ok: '對了！永遠碰不到，是平行。' } },
+  { key: 'quadp', title: '平行四邊形和梯形', terms: ['平行四邊形', '梯形'], game: 'quad', sem: '四下', when: ['quad:name', 'quad:pairs'],
+    ask: '工廠有好多四邊形的板子。要怎麼分類？看看相對的兩條邊。', tryIt: '往右拖，換一塊板子。一樣顏色的是平行的邊。', states: [0, 1, 2],
+    pic: (i, tg) => c4quadPair(i, tg ? ['平行四邊形', '梯形', ''][i] : ''),
+    note: i => ['兩組對邊都平行', '只有一組對邊平行', '沒有平行的邊'][i],
+    found: '數一數有幾組對邊平行，就能替板子分類。', name: `兩組對邊平行的四邊形叫${c4T('平行四邊形')}；只有一組對邊平行的叫${c4T('梯形')}。`, loop: [0, 1],
+    check: { q: '水桶的側面，上下兩條邊平行，左右兩條邊不平行。它是什麼形狀？', pic: () => c4quadPair(1), opts: ['長方形', '梯形', '平行四邊形'], a: 1, why: '幾組對邊平行？', ok: '對了！只有一組，是梯形。' } },
+  { key: 'rhomb', title: '菱形', terms: ['菱形'], game: 'quad', sem: '四下', when: ['quad:name'],
+    ask: '四根一樣長的吸管接成一圈，輕輕一推，形狀會變。什麼沒有變？', tryIt: '往右拖，推推看。', states: [0, 22, 42], tween: 1,
+    pic: (d, tg) => c4rhomb(d, tg && d > 0 ? '菱形' : ''),
+    note: d => d === 0 ? '4 個角都是直角，是正方形' : d < 42 && d > 0 ? '角變了，4 根吸管還是一樣長' : d === 42 ? '更歪了，4 邊還是一樣長' : '',
+    found: '角一直變，可是 4 邊都一樣長。', name: `4 個邊都一樣長的四邊形叫${c4T('菱形')}。`, loop: [1, 2],
+    check: { q: '風箏的 4 條邊都是 30 公分，角不是直角。它是什麼形狀？', pic: () => c4rhomb(30), opts: ['梯形', '菱形', '長方形'], a: 1, why: '看 4 條邊。', ok: '對了！4 邊一樣長，是菱形。' } },
+  { key: 'diag', title: '對角線', terms: ['對角線'], game: 'quad', sem: '四下', when: ['quad:diag'],
+    ask: '板子要多加一根骨架才穩。從 A 點拉線，拉到哪裡才能穿過板子中間？', tryIt: '往右拖，換一條線拉。', states: [0, 1, 2],
+    pic: (s, tg) => c4diag(s, tg && s ? '對角線' : ''),
+    note: s => ['A 到 B：就是板子的邊，沒有穿過中間', 'A 到 C：連到對面的點，把板子分成兩塊', 'B 到 D：也連到對面的點'][s],
+    found: '連到對面的點才會穿過中間，一共有 2 條。', name: `四邊形連接相對兩個頂點的線，叫${c4T('對角線')}。`, loop: [1, 2],
+    check: { q: '一扇長方形的窗戶，對角線一共可以畫幾條？', pic: () => c4s(110, c4poly([[60, 10], [260, 10], [260, 100], [60, 100]], '#e6f0fa', '#2f5f9e')), opts: ['1', '2', '4'], a: 1, why: '從每個角連到對面的角，會有幾條？', ok: '對了！2 條。' } },
+  { key: 'round', title: '概數和四捨五入', terms: ['概數', '四捨五入'], game: 'est', sem: '四下', when: ['est:near', 'est:how'],
+    ask: '新聞不會說「3482 人」，常常說「大約 3500 人」。為什麼不是 3400？', tryIt: '往右拖，看看紅色箭頭靠近哪一邊。', states: [3420, 3482, 3450], tween: 1,
+    pic: (v, tg) => c4round(v, tg ? '四捨五入' : ''),
+    note: v => v === 3450 ? '3450 剛好在中間，規定算 3500' : v === 3420 ? '3420 靠近 3400' : v === 3482 ? '3482 靠近 3500' : '移動中',
+    found: '只看十位：0 到 4 往 3400 走，5 到 9 往 3500 走。', name: `大約的數叫${c4T('概數')}。看下一位，4 以下不要、5 以上進位，叫${c4T('四捨五入')}。`, loop: [0, 1],
+    check: { q: '一場比賽 1276 人。用四捨五入取到百位，概數是多少？', pic: () => '<div class="u-big num">1276</div>', opts: ['1200', '1300', '1280'], a: 1, why: '百位的下一位是 7。', ok: '對了！7 比 5 大，要進位，是 1300。' } },
+  { key: 'updown', title: '無條件進入和捨去', terms: ['無條件進入', '無條件捨去'], game: 'est', sem: '四下', when: ['est:up', 'est:down', 'est:how'],
+    ask: '87 顆橘子，每箱裝 10 顆。要幾箱？老闆和客人的想法不一樣。', tryIt: '往右拖，看裝箱和賣箱有什麼不同。', states: [0, 1, 2],
+    pic: (s, tg) => c4boxes(s, tg ? ['', '無條件進入', '無條件捨去'][s] : ''),
+    note: s => ['8 箱裝滿，還剩 7 顆', '全部都要裝：剩的也要一箱，共 9 箱', '整箱才能賣：剩的不算，只有 8 箱'][s],
+    found: '不看剩幾顆：全部要裝就多算一箱，整箱才賣就不算。', name: `不管零頭多少都多算一個，叫${c4T('無條件進入')}；不管零頭多少都不算，叫${c4T('無條件捨去')}。`, loop: [1, 2],
+    check: { q: '432 位學生坐遊覽車，每車 100 人，全部都要坐到。要用哪一種取法？', pic: () => '<div class="u-big">🚌</div>', opts: ['無條件進入', '無條件捨去'], a: 0, why: '剩下的 32 人可以不坐嗎？', ok: '對了！要多一輛，共 5 輛。' } },
+  { key: 'estim', title: '估算', terms: ['估算'], game: 'est', sem: '四下', when: ['est:sum', 'est:cost'],
+    ask: '每個麵包 48 元，買 3 個。帶 200 元夠嗎？站在櫃臺前，很快就想知道。', tryIt: '往右拖，用好算的數想想看。', states: [0, 1, 2],
+    pic: (s, tg) => c4est(s, tg && s ? '估算' : ''),
+    note: s => ['48×3 要算一下', '48 差不多 50，每個 50 元 × 3 個', '大約 150 元，比 200 元少很多：一定夠！'][s],
+    found: '不用算得很準，先換成好算的數，就知道夠不夠。', name: `先取概數算個大概，叫${c4T('估算')}。`, loop: [1, 2],
+    check: { q: '每本書 198 元，買 2 本。估算大約要幾元？', pic: () => '<div class="u-big">📚</div>', opts: ['200', '300', '400'], a: 2, why: '198 差不多 200，再乘 2。', ok: '對了！200×2＝400。' } },
+  { key: 'barc', title: '長條圖', terms: ['長條圖'], game: 'chart', sem: '四下', when: ['chart:read', 'chart:diff', 'chart:build'],
+    ask: '班上投票選點心。只看一排數字，要很久才知道誰最多。可以怎麼辦？', tryIt: '往右拖，把票數疊起來。', states: [0, 1, 2],
+    pic: (s, tg) => c4bars(['餅乾', '蘋果', '布丁', '果凍'], [6, 3, 5, 2], s, tg && s ? '長條圖' : '', 8),
+    note: s => ['全部都是字，比不出來', '一票一格疊起來，一眼看出誰高', '再加上刻度，每一條都讀得出來'][s],
+    found: '條子高的就是多，不用一個一個比。', name: `用長條的高低，表示數量的多少，叫${c4T('長條圖')}。`, loop: [1, 2],
+    check: { q: '這張長條圖是三班回收的瓶子。哪一班最多？', pic: () => c4bars(['甲班', '乙班', '丙班'], [4, 7, 3], 2, '', 8), opts: ['甲班', '乙班', '丙班'], a: 1, why: '哪一條最高？', ok: '對了！乙班最高。' } },
+  { key: 'linec', title: '折線圖', terms: ['折線圖'], game: 'chart', sem: '四下', when: ['chart:line'],
+    ask: '豆苗每天量一次高度。哪一天長得最快？要看變化，怎麼畫比較清楚？', tryIt: '往右拖，把每天的點連起來。', states: [1, 2, 3],
+    pic: (n, tg) => c4lineChart(['第一天', '第二天', '第三天', '第四天'], [2, 3, 7, 8], n, tg ? '折線圖' : '', 10, 2),
+    note: n => ['第一天到第二天：長 1 公分', '第二天到第三天：長 4 公分，線很陡！', '第三天到第四天：長 1 公分'][n - 1],
+    found: '線越陡，那一段變得越多；一眼就看出第二天到第三天長最快。', name: `把每個點用線連起來，看出變化的圖，叫${c4T('折線圖')}。`, loop: [0, 1, 2],
+    check: { q: '這張折線圖是一天的氣溫。哪一段上升最多？', pic: () => c4lineChart(['8時', '10時', '12時', '14時'], [18, 20, 26, 27], 3, '', 30, 10), opts: ['8 時到 10 時', '10 時到 12 時', '12 時到 14 時'], a: 1, why: '哪一段線最陡？', ok: '對了！上升了 6 度。' } },
+  { key: 'gap', title: '省略符號', terms: ['省略符號'], game: 'chart', sem: '四下', when: ['chart:gap'],
+    ask: '三個人的身高差不多。從 0 開始畫，三條幾乎一樣高，看不出差別。怎麼辦？', tryIt: '往右拖，改一改刻度。', states: [0, 1, 2],
+    pic: (s, tg) => c4gap(s, tg && s === 2 ? '省略符號' : ''),
+    note: s => ['從 0 開始：三條幾乎一樣高', '切掉下面：差別看清楚了，可是別人以為從 0 開始', '加上鋸齒記號：告訴別人下面切掉了'][s],
+    found: '下面用不到的部分可以切掉，但是要做記號告訴別人。', name: `表示「這裡省略了一段刻度」的鋸齒記號，叫${c4T('省略符號')}。`, loop: [1, 2],
+    check: { q: '這張圖的刻度從 120 開始，下面有省略符號。這是什麼意思？', pic: () => c4gap(2), opts: ['0 到 120 這段沒畫出來', '大家都是 120', '圖畫錯了'], a: 0, why: '鋸齒記號表示什麼被切掉了？', ok: '對了！那一段刻度省略了。' } },
+  { key: 'ell', title: '複合圖形', terms: ['複合圖形'], game: 'deck', sem: '四下', when: ['deck:ell'],
+    ask: 'L 形的甲板要鋪地磚。沒有公式可以直接算，怎麼知道要幾塊？', tryIt: '往右拖，切一刀試試。', states: [0, 1, 2],
+    pic: (s, tg) => c4ell(s, tg && s === 2 ? '複合圖形' : ''),
+    note: s => ['不是長方形，公式用不上', '切一刀，變成兩個長方形', '分開算再加起來：21 塊'][s],
+    found: '切開就變成會算的長方形了。', name: `由幾個圖形合起來的圖形，叫${c4T('複合圖形')}。可以切開算再加起來。`, loop: [1, 2],
+    check: { q: '凸字形的花圃，是兩個長方形合起來的。它是什麼圖形？', pic: () => c4s(110, c4poly([[110, 10], [210, 10], [210, 50], [280, 50], [280, 100], [40, 100], [40, 50], [110, 50]], '#e6f0fa', '#2f5f9e')), opts: ['梯形', '複合圖形', '正方形'], a: 1, why: '它是幾個圖形合起來的？', ok: '對了！可以切開算面積。' } },
+  { key: 'eqv', title: '等值分數', terms: ['等值分數'], game: 'eqv', sem: '四下', when: ['eqv:cut', 'eqv:simplify', 'eqv:candy', 'eqv:cmp'],
+    ask: '姊姊吃半條巧克力，弟弟把半條切成小塊才吃。弟弟吃得比較多嗎？', tryIt: '往右拖，把紅色那一條切細。', states: [1, 2, 4],
+    pic: (k, tg) => c4strip(k, tg ? '等值分數' : ''),
+    note: k => `切成 ${2 * k} 塊，吃 ${k} 塊，和上面一樣長`,
+    found: '塊數變多，可是長度一樣。1/2、2/4、4/8 都是一樣多。', name: `寫法不同、大小一樣的分數，叫${c4T('等值分數')}。`, loop: [0, 1, 2],
+    check: { q: '哪一個和 1/3 是等值分數？', pic: () => c4s(90, c4cells(30, 6, 3, 1, 260, 32) + c4cells(30, 50, 6, 0, 260, 32)), opts: ['2/6', '2/3', '3/6'], a: 0, why: '1 塊切成 2 小塊，3 塊就變成幾小塊？', ok: '對了！1/3＝2/6。' } },
+  { key: 'h24', title: '24 小時制', terms: ['24 小時制'], game: 'time', sem: '四下', when: ['time:h24'],
+    ask: '火車票寫著「15:00 開車」。鐘面上明明沒有 15，這是幾點？', tryIt: '往右拖，從半夜開始走。', states: [180, 720, 900], tween: 0,
+    pic: (m, tg) => c4day(m, tg ? '24 小時制' : ''),
+    note: m => m === 180 ? '上午 3 時：3:00' : m === 720 ? '中午 12 時：12:00' : '下午 3 時：12＋3，是 15:00',
+    found: '從半夜一直數到隔天半夜，就不會弄混上午和下午。', name: `一天從 0 時數到 24 時，叫${c4T('24 小時制')}。下午的時刻多加 12。`, loop: [0, 2],
+    check: { q: '晚上 8 時 20 分，用 24 小時制怎麼寫？', pic: () => '<div class="u-big">🌙</div>', opts: ['8:20', '18:20', '20:20'], a: 2, why: '晚上的時刻要加 12。', ok: '對了！8＋12＝20，是 20:20。' } },
+];
+const conceptsOf = g => CONCEPTS.filter(c => c.game === g);
+const seenCpt = () => S.seenCpt || (S.seenCpt = {});
+let cptTimer = null, cptAnim = 0;
+const cptStop = () => { if (cptTimer) { clearInterval(cptTimer); cptTimer = null; } cptAnim++; };
+function cptPaint(C, to, named, from) { // 能轉、能移的圖用補間動起來；其他直接換
+  const el = document.getElementById('cp'); if (!el) return;
+  const put = v => { const e = document.getElementById('cp'); if (e) e.innerHTML = C.pic(v, named); };
+  const id = ++cptAnim;
+  if (!C.tween || typeof to !== 'number' || typeof from !== 'number' || from === to) return put(to);
+  const t0 = performance.now(), step = t => { if (id !== cptAnim) return; const p = Math.min(1, (t - t0) / 320); put(p >= 1 ? to : from + (to - from) * (1 - (1 - p) * (1 - p))); if (p < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function cptDrag(el, cb) { // 在圖和拉桿上都可以拖
+  el.onpointerdown = e => { el._on = true; try { el.setPointerCapture(e.pointerId); } catch (x) {} const b = el.getBoundingClientRect(); cb((e.clientX - b.left) / b.width); e.preventDefault(); };
+  el.onpointermove = e => { if (el._on) { const b = el.getBoundingClientRect(); cb((e.clientX - b.left) / b.width); } };
+  el.onpointerup = el.onpointercancel = () => { el._on = false; };
+}
+function runConcept(key, then, replay) {
+  const C = CONCEPTS.find(c => c.key === key), who = STORY[C.game].who, L = { title: C.title, sem: C.sem, who }, L0 = { title: '小故事', sem: C.sem, who };
+  const done = () => { cptStop(); if (!replay) { seenCpt()[key] = 1; save(); } then(); };
+  const skipBtn = `<button class="skip5" id="skipc">${replay ? '不看了' : '跳過'}</button>`;
+  const wire = () => { document.getElementById('out').onclick = () => { cptStop(); if (replay) return then(); R = null; go(''); }; document.getElementById('skipc').onclick = () => { seenCpt()[key] = 1; save(); cptStop(); then(); }; };
+  function op() { // 第二步：動手試，全程不出現新詞（連標題也不出現）
+    cptStop();
+    lessonFrame(L0, `${nums(C.ask)}<br><small>${nums(C.tryIt)}</small>`, `<div class="cp" id="cpw"><div id="cp"></div><div class="cslide" id="cs">${C.states.map((_, i) => `<u style="left:${i / (C.states.length - 1) * 100}%"></u>`).join('')}<i id="csk" class="hint">👉</i></div></div><div class="trail" id="ct"></div>${skipBtn}`); wire();
+    const seen = new Set(); let i = -1, over = false;
+    const nextBtn = () => { document.getElementById('actions').innerHTML = over ? '<button class="btn" id="nm">這叫什麼？</button>' : '<button class="btn alt" id="tn">不方便拖？按這裡換下一個</button>'; if (over) document.getElementById('nm').onclick = named; else document.getElementById('tn').onclick = () => { const n = C.states.findIndex((_, k) => !seen.has(k)); show(n < 0 ? (i + 1) % C.states.length : n, true); }; };
+    const show = (k, moved) => { const prev = i < 0 ? undefined : C.states[i]; i = k; cptPaint(C, C.states[k], false, prev); setEl('ct', nums(C.note(C.states[k]))); const sk = document.getElementById('csk'); sk.style.left = `${k / (C.states.length - 1) * 100}%`; if (moved) sk.classList.remove('hint'); sfx.hop(); seen.add(k); if (seen.size === C.states.length && !over) { over = true; setMsg(nums(C.found), 'good'); sfx.ok(); } nextBtn(); };
+    show(0);
+    cptDrag(document.getElementById('cpw'), x => { const k = clamp4(Math.round(x * (C.states.length - 1)), 0, C.states.length - 1); if (k !== i) show(k, true); });
+  }
+  function named() { // 第三步：命名，圖一直動，新詞貼在圖上
+    cptStop();
+    lessonFrame(L, nums(C.name), `<div class="cp2"><div id="cp"></div></div><div class="tagrow">${C.terms.map(t => `<span class="termtag">${t}</span>`).join('')}</div>${skipBtn}`); wire();
+    let k = 0, prev; const paint = () => { const v = C.states[C.loop[k % C.loop.length]]; cptPaint(C, v, true, prev); prev = v; }; paint();
+    cptTimer = setInterval(() => { k++; if (document.getElementById('cp')) paint(); else cptStop(); }, 1400);
+    actionBtn('ck', '換一題試試').onclick = check;
+  }
+  function check() { // 第四步：換情境用新詞答；答錯回到操作
+    cptStop(); const K = C.check;
+    lessonFrame(L, nums(K.q), `<div class="cp2">${K.pic()}</div>${skipBtn}`); wire();
+    document.getElementById('actions').innerHTML = `<div class="choices${K.opts.some(o => o.length > 6) || K.opts.length > 3 ? ' col' : ''}">${K.opts.map((o, i) => `<button class="choice" data-c4="${i}">${nums(o)}</button>`).join('')}</div>`;
+    document.querySelectorAll('[data-c4]').forEach(b => b.onclick = () => {
+      if (+b.dataset.c4 === K.a) { sfx.good(); setMsg(nums(K.ok), 'good'); seenCpt()[key] = 1; save(); document.getElementById('skipc').hidden = true; actionBtn('fin', replay ? '看完了' : '開始玩').onclick = done; return; }
+      sfx.retry(); setMsg(nums(K.why), 'hint'); actionBtn('bk', '回去再動手看看').onclick = op;
+    });
+  }
+  op();
+}
+const clamp4 = (v, a, b) => Math.max(a, Math.min(b, v));
+function conceptThen(q, then) { // 第一次碰到這個題型自動播；已看過就不再播；舊存檔沒有 seenCpt 也可以
+  const key = q.kind + ':' + q.mode, C = CONCEPTS.find(c => c.when.includes(key) && !seenCpt()[c.key] && (!c.test || c.test(q)));
+  if (!C) return then();
+  runConcept(C.key, () => conceptThen(q, then));
+}
+function viewConcepts(g, back) { // 重看；單位教室教過的單位，接回單位教室
+  const list = g ? conceptsOf(g) : CONCEPTS, lk = g ? (LESSON_BEFORE[g] || []) : [];
+  window.scrollTo(0, 0);
+  $app.innerHTML = `<div class="top"><button class="icon-btn" id="bkc" aria-label="回去">⌂</button><h2 class="page-h">新概念小故事</h2></div><p class="tag">想再看一次哪一個？</p><div class="lessons">${lk.map(k => `<button class="lesson" data-rl="${k}"><span class="l-t"><b>單位教室：${LESSONS[k].title}</b><small>${LESSONS[k].cards.map(c => c.u).join('、')}</small></span><em class="sem">${LESSONS[k].sem}</em></button>`).join('')}${list.map(c => `<button class="lesson" data-rc="${c.key}"><span class="l-t"><b>${c.title}</b><small>${c.terms.join('、')}・${GAMES[c.game].name}</small></span><em class="sem">${c.sem}</em>${seenCpt()[c.key] ? '<span class="badge in">✓</span>' : ''}</button>`).join('')}</div>`;
+  document.getElementById('bkc').onclick = back;
+  document.querySelectorAll('[data-rc]').forEach(b => b.onclick = () => runConcept(b.dataset.rc, () => viewConcepts(g, back), true));
+  document.querySelectorAll('[data-rl]').forEach(b => b.onclick = () => runLesson(b.dataset.rl, () => viewConcepts(g, back)));
+}
 function viewLessons() {
   window.scrollTo(0, 0);
   $app.innerHTML = `<div class="top"><button class="icon-btn" id="home" aria-label="回地圖">⌂</button><h2 class="page-h">單位教室</h2></div>
@@ -1848,7 +2205,7 @@ function viewParent() {
   </div>`;
   document.getElementById('snd').onchange = e => { S.sound = e.target.checked; save(); };
   document.getElementById('reset').onclick = () => {
-    if (confirm('確定清除所有星星和紀錄？')) { S.stars = 0; S.rec = {}; S.log = []; S.prog = {}; S.opened = false; S.bossDone = false; S.bossSeen = false; S.s2Seen = false; S.stamps = {}; S.fast = {}; S.quiz = {}; S.learned = {}; save(); viewParent(); }
+    if (confirm('確定清除所有星星和紀錄？')) { S.stars = 0; S.rec = {}; S.log = []; S.prog = {}; S.opened = false; S.bossDone = false; S.bossSeen = false; S.s2Seen = false; S.stamps = {}; S.fast = {}; S.quiz = {}; S.seenCpt = {}; S.learned = {}; save(); viewParent(); }
   };
   document.getElementById('out').onclick = () => go('');
 }
